@@ -1053,6 +1053,8 @@ export const fr: Dict = {
   'homeWorkingDir.trigger': 'Choisir le dossier de travail',
   'homeWorkingDir.triggerShort': 'Dossier de travail',
   'homeWorkingDir.pick': 'Choisir un dossier',
+  "homeWorkingDir.enterPath": "Saisir le chemin du dossier",
+  "homeWorkingDir.pathHint": "Utilisez le chemin absolu du dossier sur l’appareil qui exécute Open Design.",
   'homeWorkingDir.replace': 'Changer de dossier de travail',
   'homeWorkingDir.recent': 'Dossiers récents',
   'homeWorkingDir.clear': 'Retirer le dossier de travail',

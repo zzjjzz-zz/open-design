@@ -1053,6 +1053,8 @@ export const ko: Dict = {
   'homeWorkingDir.trigger': '작업 디렉터리 선택',
   'homeWorkingDir.triggerShort': '작업 디렉터리',
   'homeWorkingDir.pick': '폴더 선택',
+  "homeWorkingDir.enterPath": "폴더 경로 입력",
+  "homeWorkingDir.pathHint": "Open Design이 실행 중인 기기의 폴더 절대 경로를 입력하세요.",
   'homeWorkingDir.replace': '작업 디렉터리 변경',
   'homeWorkingDir.recent': '최근 폴더',
   'homeWorkingDir.clear': '작업 디렉터리 제거',

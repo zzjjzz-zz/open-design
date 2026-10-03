@@ -914,6 +914,7 @@ import { registerDeliverableSyntaxToolRoutes } from './routes/deliverable-syntax
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './routes/media.js';
+import { registerLinkedDirRoutes } from './routes/linked-dirs.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes, createEnforceWorkspaceProjectMutation } from './routes/project/index.js';
 import { registerProjectChatArtifactRoutes } from './routes/project/chat-artifacts.js';
 import { createChatArtifactBlobStore } from './chat-artifacts/blob-store.js';
@@ -8199,6 +8200,8 @@ export async function startServer({
     OD_BIN,
   };
 
+  registerLinkedDirRoutes(app, { http: httpDeps });
+
   app.get('/api/health', async (_req, res) => {
     const versionInfo = await readCurrentAppVersionInfo();
     const {
@@ -13651,6 +13654,10 @@ export async function startServer({
       }
     }
 
+    // Capabilities decide whether this run needs the process-global settings
+    // file at all. Session-scoped --model runs need no settings lock.
+    await ensureDetectedRuntimeCapabilities(def.id, configuredAgentEnv);
+
     // Serialize antigravity spawns whose buildArgs writes a concrete
     // model into settings.json. Two concurrent runs with different
     // models would otherwise race the file: A writes model A, B writes
@@ -13659,6 +13666,24 @@ export async function startServer({
     // AFTER agy's --log-file confirms the model was propagated. See
     // `antigravity.ts` for the chain implementation.
     let antigravityModelLockRelease: (() => void) | null = null;
+    let antigravityChildStarted = false;
+    const releaseAntigravityModelLock = () => {
+      const release = antigravityModelLockRelease;
+      antigravityModelLockRelease = null;
+      release?.();
+    };
+    if (def.id === 'antigravity') {
+      const finalizeBeforeAntigravityLock = run.onFinalize;
+      run.onFinalize = () => {
+        try { finalizeBeforeAntigravityLock?.(); }
+        finally {
+          // Before spawn there will be no child exit to release the lock.
+          // Once a child exists, keep the write-settings barrier until its
+          // model propagation is confirmed or the process exits.
+          if (!antigravityChildStarted) releaseAntigravityModelLock();
+        }
+      };
+    }
     const antigravityConcreteModel =
       def.id === 'antigravity'
       && typeof agentOptions.model === 'string'
@@ -13667,10 +13692,17 @@ export async function startServer({
         ? agentOptions.model
         : null;
     if (antigravityConcreteModel) {
-      const { acquireAntigravityModelLock } = await import(
+      const { acquireAntigravityModelLock, antigravityModelRequiresSettings } = await import(
         './runtimes/defs/antigravity.js'
       );
-      antigravityModelLockRelease = await acquireAntigravityModelLock();
+      if (antigravityModelRequiresSettings(antigravityConcreteModel)) {
+        antigravityModelLockRelease = await acquireAntigravityModelLock();
+        if (run.cancelRequested || design.runs.isTerminal(run.status)) {
+          releaseAntigravityModelLock();
+          cleanupPromptFile();
+          return;
+        }
+      }
     }
 
     let args;
@@ -13704,10 +13736,6 @@ export async function startServer({
           })()
         : [];
     try {
-      // Optional argv flags are gated on the `--help` capability map, which used
-      // to be filled only by `GET /api/agents`. Probe it here so a daemon that
-      // has never served that route still builds the same argv as one that has.
-      await ensureDetectedRuntimeCapabilities(def.id, configuredAgentEnv);
       args = def.buildArgs(
         composed,
         promptImagePaths,
@@ -13715,6 +13743,7 @@ export async function startServer({
         agentOptions,
         {
           cwd: effectiveCwd,
+          linkedDirs,
           hasPriorAssistantTurn,
           agentLogFilePath,
           promptFilePath: promptFile?.path,
@@ -14493,6 +14522,8 @@ export async function startServer({
       promptDeliveredAtSpawn = spawnedAgent.promptDeliveredAtSpawn;
       lifecycle.mark('process_spawned');
       run.child = child;
+      antigravityChildStarted = true;
+      if (antigravityModelLockRelease) child.once('exit', releaseAntigravityModelLock);
       run.childPid = typeof child.pid === 'number' ? child.pid : null;
       run.processGroupId = spawnedAgent.processGroupId;
       // Schedule release of the antigravity model lock once agy's
@@ -14516,7 +14547,7 @@ export async function startServer({
           return () => {
             if (fired) return;
             fired = true;
-            antigravityModelLockRelease?.();
+            releaseAntigravityModelLock();
           };
         })();
         const watcherAbort = new AbortController();

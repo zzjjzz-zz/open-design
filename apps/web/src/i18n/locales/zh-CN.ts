@@ -1063,6 +1063,8 @@ export const zhCN: Dict = {
   "homeWorkingDir.trigger": "选择工作目录",
   "homeWorkingDir.triggerShort": "工作目录",
   "homeWorkingDir.pick": "选择目录",
+  "homeWorkingDir.enterPath": "输入文件夹路径",
+  "homeWorkingDir.pathHint": "请输入运行 Open Design 的设备上的文件夹绝对路径。",
   "homeWorkingDir.replace": "修改工作目录",
   "homeWorkingDir.recent": "最近使用的目录",
   "homeWorkingDir.clear": "移除工作目录",

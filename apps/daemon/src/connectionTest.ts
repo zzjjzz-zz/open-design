@@ -42,6 +42,8 @@ import { diagnoseClaudeCliFailure } from './claude-diagnostics.js';
 import { createCopilotStreamHandler } from './copilot-stream.js';
 import { createJsonEventStreamHandler } from './runtimes/json-event-stream.js';
 import { agentCliEnvForAgent, validateAgentCliEnv } from './app-config.js';
+import { ensureDetectedRuntimeCapabilities } from './runtimes/detection.js';
+import { acquireAntigravityModelLock, antigravityModelRequiresSettings } from './runtimes/defs/antigravity.js';
 import {
   antigravityAuthGuidance,
   antigravityQuotaGuidance,
@@ -2374,6 +2376,7 @@ async function testAgentConnectionInternal(
   let childExit: Promise<AgentChildExit> | null = null;
   let childClosed = false;
   let promptFile: PreparedPromptFile | null = null;
+  let releaseAntigravitySettings: (() => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let abortHandler: (() => void) | null = null;
   const sink = createAgentSink();
@@ -2580,6 +2583,11 @@ async function testAgentConnectionInternal(
     }
     let args: string[];
     try {
+      await ensureDetectedRuntimeCapabilities(def.id, configuredAgentEnv);
+      if (def.id === 'antigravity' && antigravityModelRequiresSettings(input.model)) {
+        releaseAntigravitySettings = await acquireAntigravityModelLock();
+        if (input.signal?.aborted) throw new Error('Connection test was cancelled');
+      }
       promptFile = await preparePromptFileForAgent(def, SMOKE_PROMPT, 'connection-test');
       args = def.buildArgs(
         SMOKE_PROMPT,
@@ -3139,6 +3147,7 @@ async function testAgentConnectionInternal(
       .catch(() => {
         // Best-effort cleanup; the OS reaps /tmp eventually.
       });
+    releaseAntigravitySettings?.();
     await promptFile?.cleanup().catch(() => {
       // Best-effort cleanup; the OS reaps /tmp eventually.
     });

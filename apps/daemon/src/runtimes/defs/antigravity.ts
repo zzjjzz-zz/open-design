@@ -82,6 +82,11 @@ export function writeAntigravityModelSelection(
 // has been read).
 let antigravityLockChain: Promise<void> = Promise.resolve();
 
+export function antigravityModelRequiresSettings(model: unknown): boolean {
+  return typeof model === 'string' && model.length > 0 && model !== DEFAULT_MODEL_OPTION.id
+    && agentCapabilities.get('antigravity')?.modelFlag !== true;
+}
+
 export async function acquireAntigravityModelLock(): Promise<() => void> {
   const previous = antigravityLockChain;
   let release: () => void = () => {};
@@ -177,6 +182,8 @@ export const antigravityAgentDef = {
   helpArgs: ['--help'],
   capabilityFlags: {
     [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG]: 'skipPermissions',
+    '--add-dir': 'addDir',
+    '--model': 'modelFlag',
   },
   fallbackModels: [
     DEFAULT_MODEL_OPTION,
@@ -212,13 +219,18 @@ export const antigravityAgentDef = {
   buildArgs: (
     prompt,
     _imagePaths,
-    _extra = [],
+    extraAllowedDirs = [],
     options = {},
     runtimeContext = {},
   ) => {
-    if (options.model && options.model !== DEFAULT_MODEL_OPTION.id) {
+    const caps = agentCapabilities.get('antigravity') ?? {};
+    const selectedModel = options.model && options.model !== DEFAULT_MODEL_OPTION.id ? options.model : null;
+    if (runtimeContext.linkedDirs?.length && !caps.addDir) {
+      throw new Error('Installed Antigravity CLI does not support --add-dir. Upgrade Antigravity CLI and retry.');
+    }
+    if (selectedModel && !caps.modelFlag) {
       writeAntigravityModelSelection(
-        options.model,
+        selectedModel,
         runtimeContext.antigravitySettingsPath,
       );
     }
@@ -242,13 +254,19 @@ export const antigravityAgentDef = {
       args.push('--log-file', runtimeContext.agentLogFilePath);
     }
     // Daemon-managed print-mode runs have no interactive approval channel.
-    if (agentCapabilities.get('antigravity')?.skipPermissions) {
+    if (caps.skipPermissions) {
       args.push(ANTIGRAVITY_SKIP_PERMISSIONS_FLAG);
     }
+    if (caps.addDir) {
+      const dirs = new Set(extraAllowedDirs.map((dir) => dir.trim()).filter(Boolean));
+      for (const dir of dirs) args.push('--add-dir', dir);
+    }
+    if (selectedModel && caps.modelFlag) args.push('--model', selectedModel);
     args.push('-p', prompt);
     return args;
   },
   promptViaStdin: false,
+  maxPromptArgBytes: 24 * 1024,
   streamFormat: 'plain',
   installUrl: 'https://antigravity.google/cli',
   docsUrl: 'https://antigravity.google/docs/cli-overview',

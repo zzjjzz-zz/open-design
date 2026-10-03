@@ -1053,6 +1053,8 @@ export const tr: Dict = {
   'homeWorkingDir.trigger': 'Çalışma dizini seç',
   'homeWorkingDir.triggerShort': 'Çalışma dizini',
   'homeWorkingDir.pick': 'Klasör seç',
+  "homeWorkingDir.enterPath": "Klasör yolunu girin",
+  "homeWorkingDir.pathHint": "Open Design’ın çalıştığı cihazdaki klasörün mutlak yolunu kullanın.",
   'homeWorkingDir.replace': 'Çalışma dizinini değiştir',
   'homeWorkingDir.recent': 'Son klasörler',
   'homeWorkingDir.clear': 'Çalışma dizinini kaldır',

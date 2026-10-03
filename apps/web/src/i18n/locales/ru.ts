@@ -1053,6 +1053,8 @@ export const ru: Dict = {
   'homeWorkingDir.trigger': 'Выбрать рабочую папку',
   'homeWorkingDir.triggerShort': 'Рабочая папка',
   'homeWorkingDir.pick': 'Выбрать папку',
+  "homeWorkingDir.enterPath": "Ввести путь к папке",
+  "homeWorkingDir.pathHint": "Укажите абсолютный путь к папке на устройстве, где запущен Open Design.",
   'homeWorkingDir.replace': 'Сменить рабочую папку',
   'homeWorkingDir.recent': 'Недавние папки',
   'homeWorkingDir.clear': 'Убрать рабочую папку',

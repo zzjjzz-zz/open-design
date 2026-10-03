@@ -1420,6 +1420,8 @@ export interface Dict {
   'homeWorkingDir.trigger': string;
   'homeWorkingDir.triggerShort': string;
   'homeWorkingDir.pick': string;
+  'homeWorkingDir.enterPath': string;
+  'homeWorkingDir.pathHint': string;
   'homeWorkingDir.replace': string;
   'homeWorkingDir.recent': string;
   'homeWorkingDir.clear': string;

@@ -1053,6 +1053,8 @@ export const en: Dict = {
   'homeWorkingDir.trigger': 'Working directory',
   'homeWorkingDir.triggerShort': 'Working directory',
   'homeWorkingDir.pick': 'Choose folder',
+  "homeWorkingDir.enterPath": "Enter a folder path",
+  "homeWorkingDir.pathHint": "Use the absolute folder path on the device running Open Design.",
   'homeWorkingDir.replace': 'Change working directory',
   'homeWorkingDir.recent': 'Recent folders',
   'homeWorkingDir.clear': 'Remove working directory',

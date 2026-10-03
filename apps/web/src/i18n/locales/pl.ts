@@ -1053,6 +1053,8 @@ export const pl: Dict = {
   'homeWorkingDir.trigger': 'Wybierz katalog roboczy',
   'homeWorkingDir.triggerShort': 'Katalog roboczy',
   'homeWorkingDir.pick': 'Wybierz folder',
+  "homeWorkingDir.enterPath": "Wprowadź ścieżkę folderu",
+  "homeWorkingDir.pathHint": "Użyj bezwzględnej ścieżki folderu na urządzeniu, na którym działa Open Design.",
   'homeWorkingDir.replace': 'Zmień katalog roboczy',
   'homeWorkingDir.recent': 'Ostatnie foldery',
   'homeWorkingDir.clear': 'Usuń katalog roboczy',

@@ -1,3 +1,4 @@
+import { Button } from '@open-design/components';
 import {
   useEffect,
   useLayoutEffect,
@@ -41,7 +42,7 @@ export type PlusMenuPlacementPreference = 'auto' | 'down' | 'up';
 type PlusMenuFlyoutPlacement = 'right' | 'left' | 'contained';
 type PlusMenuFlyoutVerticalPlacement = 'down' | 'up';
 type PlusMenuVerticalPlacement = 'down' | 'up';
-export type PlusMenuSubmenu = 'connectors' | 'plugins' | 'skills' | 'mcp' | 'workingDir';
+export type PlusMenuSubmenu = 'connectors' | 'plugins' | 'skills' | 'mcp' | 'workingDir' | 'localCode';
 
 // Analytics mapping for the submenu flyouts: which resource list each
 // submenu carries. `workingDir` is intentionally absent because its flyout
@@ -210,6 +211,9 @@ export interface ComposerPlusMenuProps {
 
   /** Opens a native folder picker and stages the folder as local code context. */
   onLinkLocalCode?: () => void;
+  recentLocalCodeDirs?: string[];
+  onSelectRecentLocalCode?: (dir: string) => void;
+  onEnterLocalCodePath?: () => void;
 
   /**
    * Optional working-directory group: pick a folder, re-pick a recent one, or
@@ -335,6 +339,9 @@ export function ComposerPlusMenu({
   attachLoading,
   onReferenceProject,
   onLinkLocalCode,
+  recentLocalCodeDirs,
+  onSelectRecentLocalCode,
+  onEnterLocalCodePath,
   workingDir,
   recentWorkingDirs,
   onPickWorkingDir,
@@ -595,20 +602,76 @@ export function ComposerPlusMenu({
           <span>{t('chat.plus.referenceProject')}</span>
         </button>
       ) : null}
-      {onLinkLocalCode ? (
+      {onLinkLocalCode && !onSelectRecentLocalCode && !onEnterLocalCodePath ? (
         <button
           type="button"
           role="menuitem"
           className="plus-menu__item"
           data-testid="composer-plus-local-code"
-          onClick={() => {
-            close();
-            onLinkLocalCode();
-          }}
+          onClick={() => { close(); onLinkLocalCode(); }}
         >
           <Icon name="folder" size={15} className="plus-menu__item-icon" />
           <span>{t('chat.plus.linkLocalCode')}</span>
         </button>
+      ) : onLinkLocalCode || onSelectRecentLocalCode || onEnterLocalCodePath ? (
+        <PlusSubmenuRow
+          label={t('chat.plus.linkLocalCode')}
+          icon="folder"
+          open={submenu === 'localCode'}
+          testId="composer-plus-local-code"
+          onOpen={(row) => openSubmenu('localCode', row)}
+          onClose={scheduleCloseSubmenu}
+        >
+          <div className="plus-menu__list">
+            {onLinkLocalCode ? (
+              <Button
+                type="button"
+                role="menuitem"
+                className="plus-menu__item"
+                data-testid="composer-plus-local-code-pick"
+                onClick={() => {
+                  close();
+                  onLinkLocalCode();
+                }}
+              >
+                <Icon name="folder" size={15} className="plus-menu__item-icon" />
+                <span>{t('homeWorkingDir.pick')}</span>
+              </Button>
+            ) : null}
+            {(onSelectRecentLocalCode ? recentLocalCodeDirs ?? [] : []).map((dir) => (
+              <Button
+                key={dir}
+                type="button"
+                role="menuitem"
+                className="plus-menu__item"
+                title={dir}
+                data-testid="composer-plus-local-code-recent"
+                onClick={() => {
+                  close();
+                  onSelectRecentLocalCode?.(dir);
+                }}
+              >
+                <Icon name="history" size={15} className="plus-menu__item-icon" />
+                <span>{dirBasename(dir)}</span>
+              </Button>
+            ))}
+            {onEnterLocalCodePath ? (
+              <Button
+                type="button"
+                role="menuitem"
+                className="plus-menu__item"
+                data-testid="composer-plus-local-code-enter-path"
+                onClick={() => {
+                  close();
+                  onEnterLocalCodePath();
+                }}
+              >
+                <Icon name="edit" size={15} className="plus-menu__item-icon" />
+                <span>{t('homeWorkingDir.enterPath')}</span>
+              </Button>
+            ) : null}
+          </div>
+        </PlusSubmenuRow>
       ) : null}
     </>
   );

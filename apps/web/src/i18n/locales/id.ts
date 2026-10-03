@@ -1053,6 +1053,8 @@ export const id: Dict = {
   'homeWorkingDir.trigger': 'Pilih direktori kerja',
   'homeWorkingDir.triggerShort': 'Direktori kerja',
   'homeWorkingDir.pick': 'Pilih folder',
+  "homeWorkingDir.enterPath": "Masukkan jalur folder",
+  "homeWorkingDir.pathHint": "Gunakan jalur folder absolut pada perangkat yang menjalankan Open Design.",
   'homeWorkingDir.replace': 'Ubah direktori kerja',
   'homeWorkingDir.recent': 'Folder terbaru',
   'homeWorkingDir.clear': 'Hapus direktori kerja',

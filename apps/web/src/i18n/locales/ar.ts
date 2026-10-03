@@ -1053,6 +1053,8 @@ export const ar: Dict = {
   'homeWorkingDir.trigger': 'اختيار دليل العمل',
   'homeWorkingDir.triggerShort': 'دليل العمل',
   'homeWorkingDir.pick': 'اختيار مجلد',
+  "homeWorkingDir.enterPath": "أدخل مسار المجلد",
+  "homeWorkingDir.pathHint": "استخدم المسار المطلق للمجلد على الجهاز الذي يشغّل Open Design.",
   'homeWorkingDir.replace': 'تغيير دليل العمل',
   'homeWorkingDir.recent': 'المجلدات الأخيرة',
   'homeWorkingDir.clear': 'إزالة دليل العمل',

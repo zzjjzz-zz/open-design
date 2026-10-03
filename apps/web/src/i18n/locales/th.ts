@@ -1053,6 +1053,8 @@ export const th: Dict = {
   'homeWorkingDir.trigger': 'เลือกไดเรกทอรีทำงาน',
   'homeWorkingDir.triggerShort': 'ไดเรกทอรีทำงาน',
   'homeWorkingDir.pick': 'เลือกโฟลเดอร์',
+  "homeWorkingDir.enterPath": "ป้อนพาธโฟลเดอร์",
+  "homeWorkingDir.pathHint": "ใช้พาธแบบเต็มของโฟลเดอร์บนอุปกรณ์ที่ใช้งาน Open Design",
   'homeWorkingDir.replace': 'เปลี่ยนไดเรกทอรีทำงาน',
   'homeWorkingDir.recent': 'โฟลเดอร์ล่าสุด',
   'homeWorkingDir.clear': 'นำไดเรกทอรีทำงานออก',

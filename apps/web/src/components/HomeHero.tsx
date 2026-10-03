@@ -1,3 +1,4 @@
+import { folderPickerErrorDetails } from '../utils/folderPicker';
 // Lovart-style centered hero for the entry Home view.
 //
 // The prompt textarea is the canonical creation surface: the user
@@ -237,8 +238,12 @@ interface Props {
   showActivePluginChip?: boolean;
   workingDir?: string | null;
   recentDirs?: string[];
+  recentLocalCodeDirs?: string[];
   onPickWorkingDir?: () => Promise<string | null> | string | null | void;
   onPickLocalCodeDir?: () => Promise<string | null> | string | null | void;
+  onSelectRecentLocalCodeDir?: (dir: string) => Promise<string | null> | string | null | void;
+  onEnterLocalCodePath?: () => Promise<string | null> | string | null | void;
+  onLocalCodeError?: (message: string) => void;
   onSelectRecentWorkingDir?: (dir: string) => void;
   onClearWorkingDir?: () => void;
   onExamplePromptStatusChange?: (info: ExamplePromptInfo | null) => void;
@@ -416,8 +421,12 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     showActivePluginChip = true,
     workingDir = null,
     recentDirs = [],
+    recentLocalCodeDirs = [],
     onPickWorkingDir,
     onPickLocalCodeDir,
+    onSelectRecentLocalCodeDir,
+    onEnterLocalCodePath,
+    onLocalCodeError,
     onSelectRecentWorkingDir,
     onClearWorkingDir,
     onExamplePromptStatusChange,
@@ -1146,35 +1155,52 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
     });
   }
 
-  async function handleLinkLocalCodeContext() {
-    const selected = await onPickLocalCodeDir?.();
-    if (!selected) {
+  async function handleLinkLocalCodeContext(
+    selection?: Promise<string | null | void> | string | null | void,
+  ) {
+    try {
+      const selected = selection === undefined
+        ? await onPickLocalCodeDir?.()
+        : await selection;
+      if (!selected) {
+        trackContextLinkResult(analytics.track, {
+          page_name: 'home',
+          area: 'chat_composer',
+          context_kind: 'local_code',
+          result: 'cancelled',
+        });
+        return;
+      }
+      const label = selected.split(/[/\\]/).filter(Boolean).pop() || selected;
+      addWorkspaceContextItem(
+        {
+          id: `local-code:${selected}`,
+          kind: 'local-code',
+          label,
+          title: label,
+          path: selected,
+          absolutePath: selected,
+        }
+      );
       trackContextLinkResult(analytics.track, {
         page_name: 'home',
         area: 'chat_composer',
         context_kind: 'local_code',
-        result: 'cancelled',
+        result: 'success',
+        count: 1,
       });
-      return;
+    } catch (err) {
+      const details = folderPickerErrorDetails(err);
+      onLocalCodeError?.(
+        `${t('chat.linkedFolderPickError')}${details ? `: ${details}` : ''}`,
+      );
+      trackContextLinkResult(analytics.track, {
+        page_name: 'home',
+        area: 'chat_composer',
+        context_kind: 'local_code',
+        result: 'failed',
+      });
     }
-    const label = selected.split(/[/\\]/).filter(Boolean).pop() || selected;
-    addWorkspaceContextItem(
-      {
-        id: `local-code:${selected}`,
-        kind: 'local-code',
-        label,
-        title: label,
-        path: selected,
-        absolutePath: selected,
-      }
-    );
-    trackContextLinkResult(analytics.track, {
-      page_name: 'home',
-      area: 'chat_composer',
-      context_kind: 'local_code',
-      result: 'success',
-      count: 1,
-    });
   }
 
   // Both context actions live in the Add menu only (OPEND-3126), where the
@@ -2194,7 +2220,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               onSubmenuOpen={(submenu) => {
                 // Home never passes the working-dir submenu (it keeps its own
                 // footer picker), so only the resource submenus reach here.
-                if (submenu === 'workingDir') return;
+                if (submenu === 'workingDir' || submenu === 'localCode') return;
                 trackHomeChatComposerClick(analytics.track, {
                   page_name: 'home',
                   area: 'chat_composer',
@@ -2296,6 +2322,9 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
               // analytics are emitted from here alone.
               onReferenceProject={referenceProjectAction}
               onLinkLocalCode={linkLocalCodeAction}
+              recentLocalCodeDirs={recentLocalCodeDirs}
+              onSelectRecentLocalCode={onSelectRecentLocalCodeDir ? (dir) => { void handleLinkLocalCodeContext(onSelectRecentLocalCodeDir(dir)); } : undefined}
+              onEnterLocalCodePath={onEnterLocalCodePath ? () => { void handleLinkLocalCodeContext(onEnterLocalCodePath()); } : undefined}
               onSelectFromLibrary={() => {
                 trackHomeChatComposerClick(analytics.track, {
                   page_name: 'home',

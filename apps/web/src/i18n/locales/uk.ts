@@ -1053,6 +1053,8 @@ export const uk: Dict = {
   'homeWorkingDir.trigger': 'Вибрати робочий каталог',
   'homeWorkingDir.triggerShort': 'Робочий каталог',
   'homeWorkingDir.pick': 'Вибрати папку',
+  "homeWorkingDir.enterPath": "Ввести шлях до папки",
+  "homeWorkingDir.pathHint": "Вкажіть абсолютний шлях до папки на пристрої, де працює Open Design.",
   'homeWorkingDir.replace': 'Змінити робочий каталог',
   'homeWorkingDir.recent': 'Нещодавні папки',
   'homeWorkingDir.clear': 'Прибрати робочий каталог',

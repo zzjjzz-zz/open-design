@@ -1053,6 +1053,8 @@ export const ptBR: Dict = {
   'homeWorkingDir.trigger': 'Escolher diretório de trabalho',
   'homeWorkingDir.triggerShort': 'Diretório de trabalho',
   'homeWorkingDir.pick': 'Escolher pasta',
+  "homeWorkingDir.enterPath": "Informar o caminho da pasta",
+  "homeWorkingDir.pathHint": "Use o caminho absoluto da pasta no dispositivo que executa o Open Design.",
   'homeWorkingDir.replace': 'Alterar diretório de trabalho',
   'homeWorkingDir.recent': 'Pastas recentes',
   'homeWorkingDir.clear': 'Remover diretório de trabalho',

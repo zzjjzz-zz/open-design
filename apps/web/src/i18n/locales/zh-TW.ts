@@ -1065,6 +1065,8 @@ export const zhTW: Dict = {
   "homeWorkingDir.trigger": "選擇工作目錄",
   "homeWorkingDir.triggerShort": "工作目錄",
   "homeWorkingDir.pick": "選擇目錄",
+  "homeWorkingDir.enterPath": "輸入資料夾路徑",
+  "homeWorkingDir.pathHint": "請輸入執行 Open Design 的裝置上的資料夾絕對路徑。",
   "homeWorkingDir.replace": "修改工作目錄",
   "homeWorkingDir.recent": "最近使用的目錄",
   "homeWorkingDir.clear": "移除工作目錄",

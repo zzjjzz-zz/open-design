@@ -1053,6 +1053,8 @@ export const ja: Dict = {
   'homeWorkingDir.trigger': '作業ディレクトリを選択',
   'homeWorkingDir.triggerShort': '作業ディレクトリ',
   'homeWorkingDir.pick': 'フォルダを選択',
+  "homeWorkingDir.enterPath": "フォルダーのパスを入力",
+  "homeWorkingDir.pathHint": "Open Design を実行しているデバイス上のフォルダーの絶対パスを入力してください。",
   'homeWorkingDir.replace': '作業ディレクトリを変更',
   'homeWorkingDir.recent': '最近使ったフォルダ',
   'homeWorkingDir.clear': '作業ディレクトリを解除',

@@ -1053,6 +1053,8 @@ export const de: Dict = {
   'homeWorkingDir.trigger': 'Arbeitsverzeichnis wählen',
   'homeWorkingDir.triggerShort': 'Arbeitsverzeichnis',
   'homeWorkingDir.pick': 'Ordner auswählen',
+  "homeWorkingDir.enterPath": "Ordnerpfad eingeben",
+  "homeWorkingDir.pathHint": "Geben Sie den absoluten Ordnerpfad auf dem Gerät ein, auf dem Open Design läuft.",
   'homeWorkingDir.replace': 'Arbeitsverzeichnis ändern',
   'homeWorkingDir.recent': 'Zuletzt verwendete Ordner',
   'homeWorkingDir.clear': 'Arbeitsverzeichnis entfernen',

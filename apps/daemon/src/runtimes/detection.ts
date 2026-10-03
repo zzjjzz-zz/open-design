@@ -487,6 +487,7 @@ async function probeCapabilities(
   env: NodeJS.ProcessEnv,
 ): Promise<RuntimeCapabilityMap | null> {
   if (!def.helpArgs || !def.capabilityFlags) return null;
+  let help = '';
   try {
     const { stdout, stderr } = await execAgentFile(launchPath, def.helpArgs, {
       env,
@@ -500,17 +501,19 @@ async function probeCapabilities(
     // `--dangerously-skip-permissions` was never appended even on builds that
     // support it, and `--dir` (which pins the workspace to the project so the
     // agent stops adopting the enclosing git root) never applied either.
-    const help = `${String(stdout)}\n${String(stderr)}`;
-    const caps: RuntimeCapabilityMap = {};
-    for (const [flag, key] of Object.entries(def.capabilityFlags)) {
-      caps[key] = help.includes(flag);
-    }
-    return caps;
-  } catch {
-    // If --help fails, leave caps empty so buildArgs falls back to the safe
-    // baseline (no optional flags).
-    return {};
+    help = `${String(stdout)}\n${String(stderr)}`;
+  } catch (error) {
+    // Some CLI versions print complete help and exit with a usage status.
+    // Failed spawns and timeouts must not advertise capabilities.
+    if (!error || typeof error !== 'object') return {};
+    const result = error as { code?: unknown; killed?: boolean; signal?: unknown; stdout?: string | Buffer; stderr?: string | Buffer };
+    if (typeof result.code !== 'number' || result.killed || result.signal) return {};
+    help = `${result.stdout?.toString() ?? ''}\n${result.stderr?.toString() ?? ''}`;
+    if (!help.trim()) return {};
   }
+  const caps: RuntimeCapabilityMap = {};
+  for (const [flag, key] of Object.entries(def.capabilityFlags)) caps[key] = help.includes(flag);
+  return caps;
 }
 
 // A value no option can legitimately accept, so the CLI is forced to validate

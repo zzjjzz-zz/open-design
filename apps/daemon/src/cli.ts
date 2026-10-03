@@ -428,6 +428,7 @@ const SUBCOMMAND_MAP = {
   'whats-new': runWhatsNew,
   doctor: runDoctor,
   config: runConfig,
+  'linked-dirs': runLinkedDirs,
   library: runLibrary,
   figma: runFigma,
 };
@@ -10339,6 +10340,32 @@ or the daemon cannot be reached.`);
   }
   const hasError = report.issues.some((i) => i.severity === 'error');
   process.exit(hasError ? 1 : 0);
+}
+
+async function runLinkedDirs(args: string[]): Promise<void> {
+  if (!args.length || args.includes('--help') || args[0] === 'help') {
+    console.log('Usage: od linked-dirs validate --path <absolute-directory> [--daemon-url <url>] [--json]');
+    return;
+  }
+  const [sub, ...rest] = args;
+  const flags = parseFlags(rest, {
+    string: new Set(['path', 'daemon-url']),
+    boolean: new Set(['json']),
+  });
+  if (sub !== 'validate' || typeof flags.path !== 'string' || !flags.path.trim()) {
+    console.error('Usage: od linked-dirs validate --path <absolute-directory> [--daemon-url <url>] [--json]');
+    process.exitCode = 2;
+    return;
+  }
+  const base = (await libraryDaemonUrl(flags)).replace(/\/$/, '');
+  const response = await fetch(`${base}/api/linked-dirs/validate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path: flags.path }),
+  });
+  if (!response.ok) return structuredHttpFailure(response);
+  const data = await response.json() as import('@open-design/contracts').ValidateLinkedDirResponse;
+  process.stdout.write(flags.json ? JSON.stringify(data, null, 2) + '\n' : data.path + '\n');
 }
 
 async function runConfig(args) {

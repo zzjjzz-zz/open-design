@@ -1053,6 +1053,8 @@ export const it: Dict = {
   'homeWorkingDir.trigger': 'Scegli la directory di lavoro',
   'homeWorkingDir.triggerShort': 'Directory di lavoro',
   'homeWorkingDir.pick': 'Scegli cartella',
+  "homeWorkingDir.enterPath": "Inserisci il percorso della cartella",
+  "homeWorkingDir.pathHint": "Usa il percorso assoluto della cartella sul dispositivo che esegue Open Design.",
   'homeWorkingDir.replace': 'Cambia directory di lavoro',
   'homeWorkingDir.recent': 'Cartelle recenti',
   'homeWorkingDir.clear': 'Rimuovi directory di lavoro',

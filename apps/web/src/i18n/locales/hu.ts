@@ -1053,6 +1053,8 @@ export const hu: Dict = {
   'homeWorkingDir.trigger': 'Munkakönyvtár választása',
   'homeWorkingDir.triggerShort': 'Munkakönyvtár',
   'homeWorkingDir.pick': 'Mappa választása',
+  "homeWorkingDir.enterPath": "Mappa elérési útjának megadása",
+  "homeWorkingDir.pathHint": "Az Open Design programot futtató eszközön lévő mappa abszolút elérési útját adja meg.",
   'homeWorkingDir.replace': 'Munkakönyvtár módosítása',
   'homeWorkingDir.recent': 'Legutóbbi mappák',
   'homeWorkingDir.clear': 'Munkakönyvtár eltávolítása',

@@ -1053,6 +1053,8 @@ export const fa: Dict = {
   'homeWorkingDir.trigger': 'انتخاب دایرکتوری کاری',
   'homeWorkingDir.triggerShort': 'دایرکتوری کاری',
   'homeWorkingDir.pick': 'انتخاب پوشه',
+  "homeWorkingDir.enterPath": "مسیر پوشه را وارد کنید",
+  "homeWorkingDir.pathHint": "مسیر مطلق پوشه را در دستگاهی که Open Design روی آن اجرا می‌شود وارد کنید.",
   'homeWorkingDir.replace': 'تغییر دایرکتوری کاری',
   'homeWorkingDir.recent': 'پوشه‌های اخیر',
   'homeWorkingDir.clear': 'حذف دایرکتوری کاری',
