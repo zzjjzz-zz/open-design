@@ -14522,8 +14522,17 @@ export async function startServer({
       promptDeliveredAtSpawn = spawnedAgent.promptDeliveredAtSpawn;
       lifecycle.mark('process_spawned');
       run.child = child;
-      antigravityChildStarted = true;
-      if (antigravityModelLockRelease) child.once('exit', releaseAntigravityModelLock);
+      antigravityChildStarted = typeof child.pid === 'number';
+      if (antigravityModelLockRelease) {
+        child.once('exit', releaseAntigravityModelLock);
+        // A failed spawn emits error/close without an exit event. Keep a
+        // running child's barrier on errors, but release if no process began.
+        child.once('close', releaseAntigravityModelLock);
+        const spawnedChild = child;
+        child.once('error', () => {
+          if (typeof spawnedChild.pid !== 'number') releaseAntigravityModelLock();
+        });
+      }
       run.childPid = typeof child.pid === 'number' ? child.pid : null;
       run.processGroupId = spawnedAgent.processGroupId;
       // Schedule release of the antigravity model lock once agy's
@@ -14568,13 +14577,15 @@ export async function startServer({
             if (found) releaseOnce();
           })
           .catch(() => undefined);
-        child.once('exit', () => {
+        const stopModelWatcher = () => {
           // Stop the watcher so its pending readFile / setTimeout
           // chain does not outlive the run and leak into subsequent
           // antigravity spawns (or test cases).
           watcherAbort.abort();
           releaseOnce();
-        });
+        };
+        child.once('exit', stopModelWatcher);
+        child.once('close', stopModelWatcher);
       }
       if (
         (def.promptViaStdin || def.streamFormat === CODEX_APP_SERVER_STREAM_FORMAT) &&
