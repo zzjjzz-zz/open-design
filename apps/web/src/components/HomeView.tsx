@@ -1,4 +1,3 @@
-import { useFolderPicker } from '../hooks/useFolderPicker';
 // Composed Home view — the top-down layout the entry view renders
 // when the left nav rail's "Home" tab is active.
 //
@@ -9,6 +8,7 @@ import { useFolderPicker } from '../hooks/useFolderPicker';
 // textarea can live centered in the hero.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import { Dialog, DialogFooter, DialogTitle } from '@open-design/components';
 import type {
   ApplyResult,
@@ -82,9 +82,7 @@ import {
   dirExists,
   fetchRecentLinkedDirs,
   pushRecentLinkedDir,
-  validateLinkedDir,
 } from '../providers/registry';
-import { folderPickerErrorDetails } from '../utils/folderPicker';
 import { isOpenDesignHostAvailable, pickHostWorkingDir } from '@open-design/host';
 import type {
   DesignSystemSummary,
@@ -646,7 +644,7 @@ export function HomeView({
     if (ownsComposerDraft) clearHomeComposerAttachments();
   }, [ownsComposerDraft]);
   const [workingDir, setWorkingDir] = useState<string | null>(null);
-  const { pickFolder, requestFolderPath, folderPickerDialog } = useFolderPicker();
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
   // Token paired with `workingDir` when picked through the desktop host's
   // native dialog. Spent on the post-creation working-dir POST so the
   // daemon's desktop-auth gate accepts the path. Null for web picks.
@@ -2182,40 +2180,34 @@ export function HomeView({
       // auth gate and surface as a confusing late create-time failure.
       // Surface the host error instead and keep the existing working dir.
       setError(
-        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update Open Design and try again.`,
+        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update OpenDesign and try again.`,
       );
       return null;
     }
-    // Browser sessions enter a path on the daemon's device. The shared form
-    // validates it before changing this selection.
-    try {
-      const picked = await pickFolder();
-      if (picked) {
-        setWorkingDir(picked);
-        setWorkingDirToken(null);
-        void rememberRecentDir(picked);
-        return picked;
-      }
-      return null;
-    } catch (err) {
-      const details = folderPickerErrorDetails(err);
-      setError(`${t('chat.linkedFolderPickError')}${details ? `: ${details}` : ''}`);
-      return null;
+    // Pure web path: no desktop host, so there is no token gate — the raw
+    // browser folder path is the expected, working input.
+    const picked = await pickFolder();
+    if (picked) {
+      setWorkingDir(picked);
+      setWorkingDirToken(null);
+      void rememberRecentDir(picked);
+      return picked;
     }
+    return null;
   }
 
   async function handlePickLocalCodeDir() {
     if (isOpenDesignHostAvailable()) {
       const result = await pickHostWorkingDir();
       if (result.ok) {
-        const canonicalPath = await validateLinkedDir(result.baseDir);
-        void rememberRecentDir(canonicalPath);
-        return canonicalPath;
+        void rememberRecentDir(result.baseDir);
+        return result.baseDir;
       }
       if ('canceled' in result && result.canceled) return null;
-      throw new Error(
-        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update Open Design and try again.`,
+      setError(
+        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update OpenDesign and try again.`,
       );
+      return null;
     }
     const picked = await pickFolder();
     if (picked) {
@@ -2223,18 +2215,6 @@ export function HomeView({
       return picked;
     }
     return null;
-  }
-
-  async function handleSelectRecentLocalCodeDir(dir: string) {
-    const canonicalPath = await validateLinkedDir(dir);
-    void rememberRecentDir(canonicalPath);
-    return canonicalPath;
-  }
-
-  async function handleEnterLocalCodePath() {
-    const picked = await requestFolderPath();
-    if (picked) void rememberRecentDir(picked);
-    return picked;
   }
 
   function updateActiveInputs(next: Record<string, unknown>) {
@@ -3238,12 +3218,8 @@ export function HomeView({
         error={error}
         workingDir={workingDir}
         recentDirs={recentDirs}
-        recentLocalCodeDirs={recentDirs}
         onPickWorkingDir={handlePickWorkingDir}
         onPickLocalCodeDir={handlePickLocalCodeDir}
-        onSelectRecentLocalCodeDir={handleSelectRecentLocalCodeDir}
-        onEnterLocalCodePath={handleEnterLocalCodePath}
-        onLocalCodeError={setError}
         onSelectRecentWorkingDir={(dir) => {
           setWorkingDir(dir);
           // Recents come from the browser-side picker only; they carry no

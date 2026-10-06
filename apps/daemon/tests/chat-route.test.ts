@@ -4574,7 +4574,7 @@ describe('chat prompt helpers', () => {
     });
   });
 
-  it('does not grant media-specific extra directories to Codex', () => {
+  it('keeps explicit linked dirs for Codex while excluding OpenDesign resource dirs', () => {
     const dirs = resolveChatExtraAllowedDirs({
       agentId: '  CoDeX  ',
       skillsDir: '/repo/skills',
@@ -4583,7 +4583,9 @@ describe('chat prompt helpers', () => {
       existsSync: () => true,
     });
 
-    expect(dirs).toEqual([]);
+    expect(dirs).toEqual(['/linked/reference']);
+    expect(dirs).not.toContain('/repo/skills');
+    expect(dirs).not.toContain('/repo/design-systems');
   });
 
   it('keeps resource and linked dirs for non-Codex agents', () => {

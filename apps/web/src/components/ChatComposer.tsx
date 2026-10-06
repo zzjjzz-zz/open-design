@@ -1,5 +1,3 @@
-import { useFolderPicker } from '../hooks/useFolderPicker';
-import { folderPickerErrorDetails } from '../utils/folderPicker';
 'use client';
 
 import {
@@ -40,7 +38,8 @@ import type {
 } from '@open-design/contracts/analytics';
 import { deriveUploadCohort } from '../analytics/upload-tracking';
 import { notifyCompletionFeedbackGesture } from '../utils/notifications';
-import { projectRawUrl, uploadProjectFiles, validateLinkedDir, fetchRecentLinkedDirs, pushRecentLinkedDir, dirExists, applyLibraryAsset, fetchLibraryAssetElementHtml } from "../providers/registry";
+import { projectRawUrl, uploadProjectFiles, fetchRecentLinkedDirs, pushRecentLinkedDir, dirExists, applyLibraryAsset, fetchLibraryAssetElementHtml } from "../providers/registry";
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import {
   duplicatePluginAsProject,
   patchProject,
@@ -621,7 +620,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     ref
   ) {
     const { locale, t } = useI18n();
-    const { pickFolder, requestFolderPath, folderPickerDialog } = useFolderPicker();
+    const { pickFolder, folderPickerDialog } = useFolderPicker();
     const analytics = useAnalytics();
     const { workspaceContext } = useProjectCollabContext();
     const activeFileContext =
@@ -1875,28 +1874,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       }
     }
 
-    async function handleLinkLocalCodeContext(
-      selection?: Promise<string | null> | string | null,
-    ) {
-      let selected: string | null;
-      try {
-        selected = selection === undefined
-          ? await pickFolder()
-          : await selection;
-      } catch (err) {
-        const details = folderPickerErrorDetails(err);
-        setUploadError(
-          `${t('chat.linkedFolderPickError')}${details ? `: ${details}` : ''}`,
-        );
-        trackContextLinkResult(analytics.track, {
-          page_name: 'chat_panel',
-          area: 'chat_composer',
-          context_kind: 'local_code',
-          result: 'failed',
-          ...(projectId ? { project_id: projectId } : {}),
-        });
-        return;
-      }
+    async function handleLinkLocalCodeContext() {
+      const selected = await pickFolder();
       if (!selected) {
         trackContextLinkResult(analytics.track, {
           page_name: 'chat_panel',
@@ -1918,7 +1897,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         });
         return;
       }
-      void rememberRecentDir(selected);
       const label = selected.split(/[/\\]/).filter(Boolean).pop() || selected;
       const item: WorkspaceContextItem = {
         id: `local-code:${selected}`,
@@ -3646,7 +3624,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }}
               onSubmenuOpen={(submenu) => {
                 // The working-dir flyout carries actions, not a resource list.
-                if (submenu === 'workingDir' || submenu === 'localCode') return;
+                if (submenu === 'workingDir') return;
                 trackComposerBar({
                   element: 'plus_submenu_open',
                   resource_kind: PLUS_SUBMENU_RESOURCE_KIND[submenu],
@@ -3727,9 +3705,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 trackComposerBar({ element: 'plus_pick', resource_kind: 'workspace', resource_id: 'local-code' });
                 void handleLinkLocalCodeContext();
               }}
-              recentLocalCodeDirs={recentDirs}
-              onSelectRecentLocalCode={(dir) => { void handleLinkLocalCodeContext(validateLinkedDir(dir)); }}
-              onEnterLocalCodePath={() => { void handleLinkLocalCodeContext(requestFolderPath()); }}
               attachLoading={uploading}
               onSelectFromLibrary={() => {
                 trackChatPanelClick(analytics.track, {
