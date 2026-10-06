@@ -3362,6 +3362,21 @@ export async function renameProjectFile(
   return (await resp.json()) as RenameProjectFileResponse;
 }
 
+export async function validateLinkedDir(path: string, signal?: AbortSignal): Promise<string> {
+  const resp = await fetch('/api/linked-dirs/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: path.trim() }),
+    ...(signal ? { signal } : {}),
+  });
+  if (!resp.ok) throw new Error((await readApiErrorBody(resp)).message);
+  const data = await resp.json() as import('@open-design/contracts').ValidateLinkedDirResponse;
+  if (typeof data.path !== 'string' || !data.path.trim()) {
+    throw new Error('The daemon returned an invalid linked directory');
+  }
+  return data.path;
+}
+
 export async function openFolderDialog(options: { throwOnError?: boolean } = {}): Promise<string | null> {
   try {
     const resp = await fetch('/api/dialog/open-folder', { method: 'POST' });

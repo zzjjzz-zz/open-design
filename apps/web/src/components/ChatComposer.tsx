@@ -38,7 +38,8 @@ import type {
 } from '@open-design/contracts/analytics';
 import { deriveUploadCohort } from '../analytics/upload-tracking';
 import { notifyCompletionFeedbackGesture } from '../utils/notifications';
-import { projectRawUrl, uploadProjectFiles, openFolderDialog, fetchRecentLinkedDirs, pushRecentLinkedDir, dirExists, applyLibraryAsset, fetchLibraryAssetElementHtml } from "../providers/registry";
+import { projectRawUrl, uploadProjectFiles, fetchRecentLinkedDirs, pushRecentLinkedDir, dirExists, applyLibraryAsset, fetchLibraryAssetElementHtml } from "../providers/registry";
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import {
   duplicatePluginAsProject,
   patchProject,
@@ -619,6 +620,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     ref
   ) {
     const { locale, t } = useI18n();
+    const { pickFolder, folderPickerDialog } = useFolderPicker();
     const analytics = useAnalytics();
     const { workspaceContext } = useProjectCollabContext();
     const activeFileContext =
@@ -1873,7 +1875,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
     }
 
     async function handleLinkLocalCodeContext() {
-      const selected = await openFolderDialog();
+      const selected = await pickFolder();
       if (!selected) {
         trackContextLinkResult(analytics.track, {
           page_name: 'chat_panel',
@@ -2744,7 +2746,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     async function handleLinkFolder() {
       if (!projectId) return;
-      const selected = await openFolderDialog();
+      const selected = await pickFolder();
       if (!selected) return;
       await addLinkedDir(selected);
     }
@@ -3277,6 +3279,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         onDragLeave={() => setDragActive(false)}
         onDrop={inputDisabled ? undefined : handleDrop}
       >
+        {folderPickerDialog}
         {designToolboxOpen ? (
           <div className="composer-toolbox-standalone">
             {/* Click-catcher backdrop. A <div> (not a <button>) so it never

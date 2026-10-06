@@ -8,6 +8,7 @@
 // textarea can live centered in the hero.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import { Dialog, DialogFooter, DialogTitle } from '@open-design/components';
 import type {
   ApplyResult,
@@ -80,7 +81,6 @@ import {
   daemonIsLive,
   dirExists,
   fetchRecentLinkedDirs,
-  openFolderDialog,
   pushRecentLinkedDir,
 } from '../providers/registry';
 import { isOpenDesignHostAvailable, pickHostWorkingDir } from '@open-design/host';
@@ -644,6 +644,7 @@ export function HomeView({
     if (ownsComposerDraft) clearHomeComposerAttachments();
   }, [ownsComposerDraft]);
   const [workingDir, setWorkingDir] = useState<string | null>(null);
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
   // Token paired with `workingDir` when picked through the desktop host's
   // native dialog. Spent on the post-creation working-dir POST so the
   // daemon's desktop-auth gate accepts the path. Null for web picks.
@@ -2185,7 +2186,7 @@ export function HomeView({
     }
     // Pure web path: no desktop host, so there is no token gate — the raw
     // browser folder path is the expected, working input.
-    const picked = await openFolderDialog();
+    const picked = await pickFolder();
     if (picked) {
       setWorkingDir(picked);
       setWorkingDirToken(null);
@@ -2208,7 +2209,7 @@ export function HomeView({
       );
       return null;
     }
-    const picked = await openFolderDialog();
+    const picked = await pickFolder();
     if (picked) {
       void rememberRecentDir(picked);
       return picked;
@@ -3104,6 +3105,7 @@ export function HomeView({
       data-variant={variant}
       ref={homeViewRef}
     >
+      {folderPickerDialog}
       {/* `active` gates the portal-escaping campaign dialog to the ACTIVE home
           view: EntryShell only hides inactive views with display:none, which a
           document.body portal ignores. A docked composer never runs it at all —

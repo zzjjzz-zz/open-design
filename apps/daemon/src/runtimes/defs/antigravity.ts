@@ -2,8 +2,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -52,9 +55,11 @@ export function writeAntigravityModelSelection(
   label: string,
   settingsPath: string = ANTIGRAVITY_SETTINGS_PATH,
 ): void {
+  let fileMode = 0o600;
   let existing: Record<string, unknown> = {};
   if (existsSync(settingsPath)) {
     try {
+      fileMode = statSync(settingsPath).mode & 0o777;
       const parsed = JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         existing = parsed as Record<string, unknown>;
@@ -66,7 +71,11 @@ export function writeAntigravityModelSelection(
   }
   existing.model = label;
   mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+  const tempPath = `${settingsPath}.${randomBytes(4).toString('hex')}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(existing, null, 2)}\n`, {
+    mode: fileMode,
+  });
+  renameSync(tempPath, settingsPath);
 }
 
 // Per-process serialization for write-settings → spawn → agy-reads
@@ -81,6 +90,11 @@ export function writeAntigravityModelSelection(
 // its `--log-file` (which is the upstream signal that settings.json
 // has been read).
 let antigravityLockChain: Promise<void> = Promise.resolve();
+
+export function antigravityModelRequiresSettings(model: unknown): boolean {
+  return typeof model === 'string' && model.length > 0 && model !== DEFAULT_MODEL_OPTION.id
+    && agentCapabilities.get('antigravity')?.modelFlag !== true;
+}
 
 export async function acquireAntigravityModelLock(): Promise<() => void> {
   const previous = antigravityLockChain;
@@ -177,6 +191,8 @@ export const antigravityAgentDef = {
   helpArgs: ['--help'],
   capabilityFlags: {
     [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG]: 'skipPermissions',
+    '--add-dir': 'addDir',
+    '--model': 'modelFlag',
   },
   fallbackModels: [
     DEFAULT_MODEL_OPTION,
@@ -210,45 +226,61 @@ export const antigravityAgentDef = {
   // composed in server.ts gives a second line of defense for weak
   // plain-stream models like Gemini 3.5 Flash.
   buildArgs: (
-    prompt,
+    _prompt,
     _imagePaths,
-    _extra = [],
+    extraAllowedDirs = [],
     options = {},
     runtimeContext = {},
   ) => {
-    if (options.model && options.model !== DEFAULT_MODEL_OPTION.id) {
+    const caps = agentCapabilities.get('antigravity') ?? {};
+    const selectedModel =
+      options.model && options.model !== DEFAULT_MODEL_OPTION.id
+        ? options.model
+        : null;
+
+    if (!runtimeContext.promptFilePath) {
+      throw new Error(
+        'Antigravity requires a daemon-managed prompt file for safe headless execution.',
+      );
+    }
+    if (!caps.addDir) {
+      throw new Error(
+        'Installed Antigravity CLI does not support --add-dir. Upgrade Antigravity CLI and retry.',
+      );
+    }
+    if (selectedModel && !caps.modelFlag) {
       writeAntigravityModelSelection(
-        options.model,
+        selectedModel,
         runtimeContext.antigravitySettingsPath,
       );
     }
-    // Print mode via `-p <prompt>`. Older OD used `agy -p -` and wrote the
-    // prompt on stdin, but current agy (reproduced on 1.1.13) treats `-`
-    // as the literal prompt string and ignores stdin — the model only
-    // ever sees a single dash (#7161). Passing the real prompt as the
-    // `-p` argument matches the verified working CLI form
-    // (`agy -p "say hello"`).
+
     const args: string[] = [];
-    // Always opt into `--log-file` when the daemon supplied a path so
-    // it can post-exit grep for the actual upstream failure shape
-    // (auth missing vs quota reached vs upstream error) — without it
-    // the chat surfaces a generic "empty response" because print mode
-    // never echoes those errors on stdout. See server.ts empty-output
-    // guard for the consumer.
-    //
-    // Flag order is load-bearing on agy: put `--log-file` before `-p`
-    // so diagnostics (model override / auth / quota) land in the log.
     if (runtimeContext.agentLogFilePath) {
       args.push('--log-file', runtimeContext.agentLogFilePath);
     }
-    // Daemon-managed print-mode runs have no interactive approval channel.
-    if (agentCapabilities.get('antigravity')?.skipPermissions) {
+    if (caps.skipPermissions) {
       args.push(ANTIGRAVITY_SKIP_PERMISSIONS_FLAG);
     }
-    args.push('-p', prompt);
+
+    const dirs = new Set([
+      dirname(runtimeContext.promptFilePath),
+      ...extraAllowedDirs.map((dir) => dir.trim()).filter(Boolean),
+    ]);
+    for (const dir of dirs) args.push('--add-dir', dir);
+
+    if (selectedModel && caps.modelFlag) {
+      args.push('--model', selectedModel);
+    }
+
+    args.push(
+      '-p',
+      `Read the complete Open Design instructions, conversation history, and user request from the file "${runtimeContext.promptFilePath}". Follow that file strictly and answer the user's latest request.`,
+    );
     return args;
   },
   promptViaStdin: false,
+  promptViaFile: true,
   streamFormat: 'plain',
   installUrl: 'https://antigravity.google/cli',
   docsUrl: 'https://antigravity.google/docs/cli-overview',

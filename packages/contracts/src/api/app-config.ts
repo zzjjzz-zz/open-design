@@ -106,3 +106,11 @@ export type UpdateAppConfigRequest = Partial<AppConfigPrefs>;
 export interface RecentLinkedDirsResponse {
   dirs: string[];
 }
+
+export interface ValidateLinkedDirRequest {
+  path: string;
+}
+
+export interface ValidateLinkedDirResponse {
+  path: string;
+}
