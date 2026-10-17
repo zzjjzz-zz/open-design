@@ -103,11 +103,24 @@ describe('MCP sensitive extension policy', () => {
 
 describe('MCP history and safe preferences', () => {
   it('gets exact conversations and messages, with bounded history pages', async () => {
-    mockDaemon((url) => url.endsWith('/messages') ? json({ messages: [{ id: 'm1', content: 'one' }, { id: 'm2', content: 'two' }] }) : json({ conversations: [{ id: 'c1', title: 'Demo' }] }));
+    mockDaemon((url) => url.endsWith('/messages/m1') ? json({ message: { id: 'm1', content: 'one' } }) : url.endsWith('/messages') ? json({ messages: [{ id: 'm1', content: 'one' }, { id: 'm2', content: 'two' }] }) : json({ conversations: [{ id: 'c1', title: 'Demo' }] }));
     expect(body(await call('get_conversation', { project, conversationId: 'c1' }))).toEqual({ conversation: { id: 'c1', title: 'Demo' } });
     expect(body(await call('list_messages', { project, conversationId: 'c1', offset: 1, limit: 1 }))).toMatchObject({ messages: [{ id: 'm2' }], total: 2 });
     expect(body(await call('get_message', { project, conversationId: 'c1', messageId: 'm1' }))).toMatchObject({ message: { content: 'one' } });
     expect((await call('get_message', { project, conversationId: 'c1', messageId: 'other' })).isError).toBe(true);
+  });
+
+  it('reads one message through its exact endpoint without loading the complete transcript', async () => {
+    const mock = mockDaemon((url) => {
+      if (url.endsWith('/messages/m1')) return json({ message: { id: 'm1', content: 'one', role: 'assistant' } });
+      if (url.endsWith('/messages')) return json({ messages: [{ id: 'wrong-full-history' }] });
+      return json({});
+    });
+    expect(body(await call('get_message', { project, conversationId: 'c1', messageId: 'm1' })))
+      .toMatchObject({ message: { id: 'm1', content: 'one' } });
+    const requestedPaths = mock.mock.calls.map(([url]) => String(url));
+    expect(requestedPaths.some((url) => url.endsWith('/messages/m1'))).toBe(true);
+    expect(requestedPaths.some((url) => url.endsWith('/messages'))).toBe(false);
   });
 
   it.each([-1, 201, 1.5, '10'])('rejects invalid history limit %s before HTTP', async (limit) => {

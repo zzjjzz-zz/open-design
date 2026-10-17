@@ -45,7 +45,7 @@ export const EXTENDED_TOOL_DEFS = [
   tool('list_conversations', 'List project conversations.', project, ['project']),
   tool('get_conversation', 'Get conversation metadata by exact id.', conversation, ['project', 'conversationId']),
   tool('list_messages', 'Bridge-side history slice (offset/limit default 0/50, max 200). REST returns full history: responses above 8 MiB are rejected, not database-paginated. Output is bounded to 512 KiB and large messages carry truncation markers.', { ...conversation, offset: { type: 'integer' }, limit: { type: 'integer' } }, ['project', 'conversationId']),
-  tool('get_message', 'Read one persisted message by exact id.', { ...conversation, messageId: string }, ['project', 'conversationId', 'messageId']),
+  tool('get_message', 'Read one persisted message by exact id without loading full conversation history.', { ...conversation, messageId: string }, ['project', 'conversationId', 'messageId']),
   tool('rename_conversation', 'Rename a conversation. requestId deduplicates within this MCP process.', { ...conversation, ...write, title: string }, ['project', 'conversationId', 'title', 'requestId'], true),
   tool('delete_conversation', 'Delete a conversation and cancel its active runs. Requires explicit user confirmation and requestId.', { ...conversation, ...write, confirm: boolean }, ['project', 'conversationId', 'confirm', 'requestId'], true, true),
   tool('get_settings', 'Get only ordinary preference fields; credentials, paths, tokens and policy controls are excluded.', {}, []),
@@ -179,7 +179,7 @@ export class McpExtendedTools {
       unsupported: ['message deletion/rename (no REST API)', 'runtime-generated DOM / arbitrary HTML / full multimedia editing'],
       visualEditing: { supported: this.access.localOwner === true, staticHtmlOnly: true, operations: ['set-text', 'set-link', 'set-image', 'set-style'], styleProperties: visualStyleProperties, requiresHash: true, requiresConfirm: true, restTrustBoundary: 'Direct loopback daemon owner only. Headers are attribution, not OIDC authentication; the existing daemon authority verifier and persisted creator binding must agree. Shared/proxied REST callers are denied.' },
       idempotency: 'Mutation requestIds live only for this MCP process. After restart or ambiguous failure, inspect state before retrying.',
-      history: 'Bridge-side slicing only: full REST history is capped at 8 MiB; page output at 512 KiB. No database pagination API is available.',
+      history: 'list_messages uses bridge-side slicing of full REST history (8 MiB upstream, 512 KiB output). get_message uses a conversation-scoped exact REST lookup (8 MiB upstream, 512 KiB output). No database-paginated list API exists.',
       modelUpdates: 'Require an available agent, live catalog, enabled model and matching reasoning/serviceTier options. Catalog availability is not inference/entitlement verification; REST has no conditional update.',
     };
     if (!this.access.localOwner) throw new Error('MCP_CALLER_AUTHORITY_REQUIRED: shared callers have no verified daemon workspace identity; ToolHive OIDC alone is insufficient');
@@ -277,14 +277,13 @@ export class McpExtendedTools {
         if (!found) throw new Error('CONVERSATION_NOT_FOUND');
         return { conversation: found };
       }
-      case 'list_messages':
       case 'get_message': {
+        const result = await request(`${root}/conversations/${cid}/messages/${segment(args.messageId)}`);
+        if (!record(result) || !record(result.message)) throw new Error('INVALID_DAEMON_RESPONSE: expected message');
+        return { message: boundedMessage(result.message, HISTORY_PAGE_BYTES) };
+      }
+      case 'list_messages': {
         const messages = await list(`${root}/conversations/${cid}/messages`, 'messages');
-        if (name === 'get_message') {
-          const found = messages.find((item) => record(item) && item.id === args.messageId);
-          if (!found) throw new Error('MESSAGE_NOT_FOUND');
-          return { message: boundedMessage(found, HISTORY_PAGE_BYTES) };
-        }
         const offset = args.offset === undefined ? 0 : Number(args.offset);
         const limit = args.limit === undefined ? 50 : Number(args.limit);
         if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('INVALID_ARGUMENT: invalid history page');

@@ -322,6 +322,41 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(sourceAfterBody.messages.every((message) => message.forkedInto == null)).toBe(true);
   });
 
+  it('GET exact conversation message returns the same message without exposing a sibling conversation', async () => {
+    const projectId = `proj-message-exact-${Date.now()}`;
+    const create = await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: projectId, name: 'Exact message fixture', skillId: null, designSystemId: null }),
+    });
+    expect(create.status).toBe(200);
+    const createConversation = async () => {
+      const response = await fetch(`${baseUrl}/api/projects/${projectId}/conversations`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Exact fixture', sessionMode: 'chat' }),
+      });
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { conversation: { id: string } }).conversation.id;
+    };
+    const conversationId = await createConversation();
+    const siblingId = await createConversation();
+    const messageId = 'exact-message-1';
+    const base = `${baseUrl}/api/projects/${projectId}/conversations`;
+    const write = await fetch(`${base}/${conversationId}/messages/${messageId}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: messageId, role: 'assistant', content: 'unique answer', taskAnalytics: { durationMs: 5 } }),
+    });
+    expect(write.status).toBe(200);
+    const exact = await fetch(`${base}/${conversationId}/messages/${messageId}`);
+    expect(exact.status).toBe(200);
+    const single = (await exact.json()) as { message: Record<string, unknown> };
+    expect(single.message).toMatchObject({ id: messageId, content: 'unique answer', role: 'assistant' });
+    const all = await fetch(`${base}/${conversationId}/messages`);
+    const listed = (await all.json()) as { messages: Array<Record<string, unknown>> };
+    expect(single.message).toEqual(listed.messages.find((message) => message.id === messageId));
+    expect((await fetch(`${base}/${siblingId}/messages/${messageId}`)).status).toBe(404);
+    expect((await fetch(`${base}/${conversationId}/messages/missing`)).status).toBe(404);
+  });
+
   it('round-trips forkedInto on an assistant message so the fork divider survives a reload', async () => {
     // 设计稿第 38 格:分叉之后在原会话那条助手消息上**原地**落一条分界。
     // 分界只有落库才「刷新之后还在」—— 契约上的 `ChatMessage.forkedInto`

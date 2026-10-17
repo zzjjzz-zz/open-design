@@ -418,6 +418,30 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
     });
   });
 
+  // A bounded, conversation-scoped lookup for MCP and other clients that need
+  // one persisted message. The full transcript endpoint above remains unchanged
+  // for the web chat renderer, but cannot serve as an efficient exact lookup.
+  app.get('/api/projects/:id/conversations/:cid/messages/:mid', async (req, res) => {
+    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
+    if (!getRoutableConversation(req.params.id, req.params.cid)) {
+      return res.status(404).json({ error: 'conversation not found' });
+    }
+    const message = getMessage(db, req.params.mid, req.params.cid);
+    if (!message) return res.status(404).json({ error: 'message not found' });
+    const runId = typeof message.runId === 'string' ? message.runId : null;
+    const turn = runId ? strategyTaskTurnsForRunIds(
+      db, [runId], { projectId: req.params.id, conversationId: req.params.cid },
+    ).get(runId) : undefined;
+    res.json({ message: turn ? {
+      ...message,
+      strategyTaskExecutionId: turn.taskExecutionId,
+      strategyTaskRunIndex: turn.taskRunIndex,
+      strategyTaskDelivered: turn.delivered,
+      strategyTaskBlocked: turn.blocked,
+      strategyTaskBlockedText: turn.blockedText,
+    } : message });
+  });
+
   // #6396: the daemon is the single writer of a daemon-backed assistant
   // message's run events / content / last-run-event id / run status. A stale
   // web-client snapshot (captured in memory before a reconnect or project

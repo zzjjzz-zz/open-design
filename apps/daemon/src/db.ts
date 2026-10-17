@@ -3037,6 +3037,7 @@ export function getMessage(db: SqliteDb, id: string, conversationId?: string) {
               pre_turn_file_names_json AS preTurnFileNamesJson,
               session_mode AS sessionMode,
               run_context_json AS runContextJson,
+              task_analytics_json AS taskAnalyticsJson,
               applied_plugin_snapshot_json AS appliedPluginSnapshotJson,
               forked_into_json AS forkedIntoJson,
               cancel_origin AS cancelOrigin,
