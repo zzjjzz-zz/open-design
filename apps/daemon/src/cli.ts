@@ -102,6 +102,8 @@ const MCP_STRING_FLAGS = new Set([
   'daemon-url',
 ]);
 const MCP_BOOLEAN_FLAGS = new Set([
+  'local-owner',
+  'allow-writes',
   'help',
   'h',
 ]);
@@ -2377,6 +2379,9 @@ async function runMcp(args) {
     return;
   }
 
+  if (flags['allow-writes'] && !flags['local-owner']) {
+    throw new Error('--allow-writes requires --local-owner; shared MCP caller authority is not implemented');
+  }
   const { ensureMcpDaemonUrl } = await import('./mcp-bootstrap.js');
   const daemonUrl = await ensureMcpDaemonUrl({
     flagUrl: flags['daemon-url'],
@@ -2385,6 +2390,8 @@ async function runMcp(args) {
   const { runMcpStdio } = await import('./mcp.js');
   await runMcpStdio({
     daemonUrl,
+    localOwner: flags['local-owner'] === true,
+    allowWrites: flags['allow-writes'] === true,
     ...(flags['daemon-url']
       ? {}
       : {
@@ -2394,7 +2401,7 @@ async function runMcp(args) {
 }
 
 function printMcpHelp() {
-  console.log(`Usage: od mcp [--daemon-url <url>]
+  console.log(`Usage: od mcp [--daemon-url <url>] [--local-owner [--allow-writes]]
 
 Run a stdio MCP (Model Context Protocol) server that proxies project
 tool calls to a running OpenDesign daemon. Wire it into a coding agent
@@ -2403,6 +2410,17 @@ project and create project-scoped artifacts without exporting a zip
 every iteration.
 
 Options:
+  --local-owner       Enable sensitive extensions for the daemon owner in
+                       a private, single-user stdio session on loopback.
+                       NEVER use on shared ToolHive/vMCP backends: OIDC
+                       does not bind a caller to the daemon workspace.
+  --allow-writes      Opt into extension mutations in that owner session.
+                       Delete/restore/publish also require confirm=true.
+                       Mutation requestIds deduplicate only in this process;
+                       inspect state after restart or ambiguous failures.
+                       These options guard NEW extensions only. Legacy tools
+                       retain the single-daemon-owner trust boundary and can
+                       already write; they do not offer per-user isolation.
   --daemon-url <url>   OpenDesign daemon HTTP base URL. Resolution
                        order: this flag, OD_DAEMON_URL, inherited sidecar status,
                        then http://127.0.0.1:7456. Each new MCP spawn
@@ -2426,6 +2444,16 @@ Environment:
                        the MCP client disconnects.
 
 Tools exposed:
+  get_mcp_capabilities            extension authorization status and limits
+  list/get_conversation(s)        conversation metadata (local-owner only)
+  list_messages / get_message     persisted history (local-owner only)
+  rename/delete_conversation     existing REST mutations (write opt-in)
+  get/update_settings            ordinary preference whitelist only
+  get/update_model_preferences   model/reasoning/serviceTier only
+  get_export_manifest / export_project
+  deployment_preflight / list_deployments / publish_project
+  list/get/create/restore_file_version(s) / get_preview_url
+
   list_projects                  list every OpenDesign project
   get_active_context             what project/file the user has open right now
   get_artifact([project, entry]) bundle: entry file + every referenced sibling

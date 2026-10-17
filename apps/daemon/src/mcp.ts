@@ -40,6 +40,7 @@ import { randomUUID } from 'node:crypto';
 
 import { postCreateArtifactRequest } from './artifacts/create.js';
 import { resolveMcpWorkspaceContext } from './mcp-workspace-context.js';
+import { EXTENDED_TOOL_DEFS, EXTENDED_TOOL_NAMES, McpExtendedTools } from './mcp/extended-tools.js';
 import {
   createLocalMcpBriefStore as createBriefStore,
   localMcpBriefResponseCopy,
@@ -79,6 +80,8 @@ type JsonObject = Record<string, unknown>;
 interface RunMcpOptions {
   daemonUrl: string | URL;
   resolveDaemonUrl?: () => Promise<string | URL>;
+  localOwner?: boolean;
+  allowWrites?: boolean;
 }
 interface CatalogItem { id: string; name?: string; title?: string; description?: string; summary?: string }
 interface SkillsPayload { skills?: CatalogItem[] }
@@ -96,6 +99,7 @@ interface ProjectFileBundleEntry { name: string; mime: string; size: number | nu
 interface BundleInput { project: ProjectPayload | ProjectSummary; entry: string; files: ProjectFileBundleEntry[]; truncated: boolean; skippedFileCount?: number; active: ActiveContext | null; resolved?: ResolvedProject | null }
 interface ErrorWithCode { message?: string; code?: string; cause?: { code?: string } }
 interface HandleMcpToolCallOptions {
+  extendedTools?: McpExtendedTools;
   briefStore?: LocalMcpBriefStore;
   analyticsHeaders?: Record<string, string>;
   pluginAttribution?: McpPluginAttribution | null;
@@ -361,6 +365,7 @@ const EXTERNAL_PLUGIN_CONTEXT_ARG = {
 } as const;
 
 export const TOOL_DEFS = [
+  ...EXTENDED_TOOL_DEFS,
   {
     name: 'collect_brief',
     description:
@@ -861,8 +866,10 @@ export const TOOL_DEFS = [
   },
 ];
 
-export function localMcpToolDefinitions() {
-  return TOOL_DEFS;
+export function localMcpToolDefinitions(access: { localOwner?: boolean; allowWrites?: boolean } = {}) {
+  return TOOL_DEFS.filter((tool) => !EXTENDED_TOOL_NAMES.has(tool.name)
+    || tool.name === 'get_mcp_capabilities'
+    || (access.localOwner === true && (tool.annotations.readOnlyHint || access.allowWrites === true)));
 }
 
 type RuntimeJsonSchema = {
@@ -1885,6 +1892,7 @@ export async function runMcpStdio(options: RunMcpOptions): Promise<void> {
 }
 
 async function runMcpStdioImplementation(options: RunMcpOptions): Promise<void> {
+  const extendedTools = new McpExtendedTools({ localOwner: options.localOwner === true, allowWrites: options.allowWrites === true });
   let closeTransportForIdle: (() => void) | null = null;
   let idleExit: ReturnType<typeof _createMcpIdleExitController> | null = null;
   try {
@@ -2017,7 +2025,7 @@ async function runMcpStdioImplementation(options: RunMcpOptions): Promise<void> 
   );
 
   server.setRequestHandler(ListToolsRequestSchema, withMcpActivity(async () => ({
-    tools: TOOL_DEFS,
+    tools: localMcpToolDefinitions(options),
   })));
 
   server.setRequestHandler(ListResourcesRequestSchema, withMcpActivity(async () => {
@@ -2034,6 +2042,13 @@ async function runMcpStdioImplementation(options: RunMcpOptions): Promise<void> 
     const args: McpArgs = {
       ...((req.params?.arguments ?? {}) as McpArgs),
     };
+    // Sensitive extension inputs/results must not enter plugin analytics or
+    // the legacy default-workspace path. Shared mode is rejected before any
+    // daemon lookup. Local-owner calls keep a process-local mutation ledger.
+    if (typeof name === 'string' && EXTENDED_TOOL_NAMES.has(name)) {
+      const baseUrl = options.localOwner ? await daemonTarget.refresh() : daemonTarget.currentUrl();
+      return handleMcpToolCall(baseUrl, name, args, { extendedTools });
+    }
     if (name === 'collect_brief' && args.locale === undefined) {
       const locale = _localeFromMcpToolMetadata(
         (req.params as { _meta?: unknown } | undefined)?._meta,
@@ -2166,6 +2181,13 @@ async function handleMcpToolCall(
   options: HandleMcpToolCallOptions = {},
 ): Promise<McpToolCallResult> {
   try {
+    if (typeof name === 'string' && EXTENDED_TOOL_NAMES.has(name)) {
+      const extensions = options.extendedTools ?? new McpExtendedTools();
+      return ok(await extensions.call(baseUrl, name, args, async (project, headers) => {
+        try { return (await resolveProjectId(baseUrl, project, headers)).id; }
+        catch { throw new Error('PROJECT_RESOLUTION_FAILED: use an exact project id and verify workspace access'); }
+      }));
+    }
     const workspaceContext = PROJECT_OR_RUN_TOOLS.has(String(name))
       ? await resolveMcpWorkspaceContext(baseUrl)
       : null;
