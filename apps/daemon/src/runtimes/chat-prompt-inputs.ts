@@ -359,7 +359,7 @@ export function resolveChatExtraAllowedDirs({
   const isCodex =
     typeof agentId === 'string' && agentId.trim().toLowerCase() === 'codex';
   const candidates = isCodex
-    ? []
+    ? [...(Array.isArray(linkedDirs) ? linkedDirs : [])]
     : [
         skillsDir,
         designSystemsDir,

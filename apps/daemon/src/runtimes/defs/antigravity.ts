@@ -2,8 +2,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -74,9 +77,11 @@ export function writeAntigravityModelSelection(
   label: string,
   settingsPath: string = ANTIGRAVITY_SETTINGS_PATH,
 ): void {
+  let fileMode = 0o600;
   let existing: Record<string, unknown> = {};
   if (existsSync(settingsPath)) {
     try {
+      fileMode = statSync(settingsPath).mode & 0o777;
       const parsed = JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         existing = parsed as Record<string, unknown>;
@@ -88,7 +93,11 @@ export function writeAntigravityModelSelection(
   }
   existing.model = label;
   mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+  const tempPath = `${settingsPath}.${randomBytes(4).toString('hex')}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(existing, null, 2)}\n`, {
+    mode: fileMode,
+  });
+  renameSync(tempPath, settingsPath);
 }
 
 // Per-process serialization for write-settings → spawn → agy-reads
@@ -103,6 +112,11 @@ export function writeAntigravityModelSelection(
 // its `--log-file` (which is the upstream signal that settings.json
 // has been read).
 let antigravityLockChain: Promise<void> = Promise.resolve();
+
+export function antigravityModelRequiresSettings(model: unknown): boolean {
+  return typeof model === 'string' && model.length > 0 && model !== DEFAULT_MODEL_OPTION.id
+    && agentCapabilities.get('antigravity')?.modelFlag !== true;
+}
 
 export async function acquireAntigravityModelLock(): Promise<() => void> {
   const previous = antigravityLockChain;
@@ -199,6 +213,8 @@ export const antigravityAgentDef = {
   helpArgs: ['--help'],
   capabilityFlags: {
     [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG]: 'skipPermissions',
+    '--add-dir': 'addDir',
+    '--model': 'modelFlag',
   },
   fallbackModels: [
     DEFAULT_MODEL_OPTION,
@@ -232,13 +248,31 @@ export const antigravityAgentDef = {
   buildArgs: (
     _prompt,
     _imagePaths,
-    _extra = [],
+    extraAllowedDirs = [],
     options = {},
     runtimeContext = {},
   ) => {
-    if (options.model && options.model !== DEFAULT_MODEL_OPTION.id) {
+    const caps = agentCapabilities.get('antigravity') ?? {};
+    const selectedModel =
+      options.model && options.model !== DEFAULT_MODEL_OPTION.id
+        ? options.model
+        : null;
+
+    // Preserve explicit directory permissions from the local deployment while
+    // adopting upstream's stream-json stdin protocol for long prompts.
+    const allowedDirs = [...new Set(
+      [...extraAllowedDirs, ...(runtimeContext.linkedDirs ?? [])]
+        .map((dir) => dir.trim())
+        .filter(Boolean),
+    )];
+    if (allowedDirs.length > 0 && !caps.addDir) {
+      throw new Error(
+        'Installed Antigravity CLI does not support --add-dir. Upgrade Antigravity CLI and retry.',
+      );
+    }
+    if (selectedModel && !caps.modelFlag) {
       writeAntigravityModelSelection(
-        options.model,
+        selectedModel,
         runtimeContext.antigravitySettingsPath,
       );
     }
@@ -254,8 +288,14 @@ export const antigravityAgentDef = {
       args.push('--log-file', runtimeContext.agentLogFilePath);
     }
     // Daemon-managed headless runs have no interactive approval channel.
-    if (agentCapabilities.get('antigravity')?.skipPermissions) {
+    if (caps.skipPermissions) {
       args.push(ANTIGRAVITY_SKIP_PERMISSIONS_FLAG);
+    }
+    if (selectedModel && caps.modelFlag) {
+      args.push('--model', selectedModel);
+    }
+    for (const dir of allowedDirs) {
+      args.push('--add-dir', dir);
     }
     args.push(...ANTIGRAVITY_STREAM_JSON_ARGS);
     return args;

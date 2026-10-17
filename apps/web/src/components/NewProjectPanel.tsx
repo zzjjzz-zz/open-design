@@ -1,3 +1,4 @@
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@open-design/components';
@@ -21,7 +22,7 @@ import type {
 import { useI18n, useT } from '../i18n';
 import { localizeSkillDescription, localizeSkillName } from '../i18n/content';
 import type { Dict } from '../i18n/types';
-import { fetchPromptTemplate, openFolderDialog } from '../providers/registry';
+import { fetchPromptTemplate } from '../providers/registry';
 import { isStoredMediaProviderEntryPresent } from '../state/config';
 import { isMediaProviderPickerReady } from '../media/provider-readiness';
 import type {
@@ -57,6 +58,7 @@ import {
   useAIHubMixAudioModels,
 } from '../media/aihubmix-image-models';
 import { formatPickAndImportFailure } from '../utils/pickAndImportError';
+import { folderPickerErrorDetails } from '../utils/folderPicker';
 import { useBrandsByDesignSystemId } from '../runtime/brands';
 import { BrandPreviewCard } from './BrandPreviewCard';
 import { Icon } from './Icon';
@@ -77,14 +79,6 @@ const SFX_AUDIO_DURATIONS_SEC = AUDIO_DURATIONS_SEC.filter((sec) => sec <= 30);
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
 type NewProjectPlatform = Exclude<ProjectPlatform, 'auto'>;
-
-function folderPickerErrorDetails(err: unknown): string | undefined {
-  if (!(err instanceof Error)) return undefined;
-  const message = err.message.trim();
-  if (!message) return undefined;
-  const detail = message.replace(/^Could not open folder picker:\s*/i, '').trim();
-  return detail || message;
-}
 
 const DESIGN_PLATFORMS: Array<{
   value: NewProjectPlatform;
@@ -293,6 +287,7 @@ export function NewProjectPanel({
   initialTab = 'prototype',
 }: Props) {
   const t = useT();
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
   const { locale } = useI18n();
   const analytics = useAnalytics();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -808,7 +803,7 @@ export function NewProjectPanel({
         return;
       }
       try {
-        const picked = await openFolderDialog({ throwOnError: true });
+        const picked = await pickFolder();
         if (picked) {
           setWorkingDir(picked);
           setWorkingDirToken(null);
@@ -855,6 +850,7 @@ export function NewProjectPanel({
 
   return (
     <div className="newproj" data-testid="new-project-panel">
+      {folderPickerDialog}
       <div className={`newproj-tabs-shell${tabScroll.left ? ' can-left' : ''}${tabScroll.right ? ' can-right' : ''}`}>
         <button
           type="button"

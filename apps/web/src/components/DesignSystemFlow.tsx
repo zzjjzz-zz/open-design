@@ -1,3 +1,4 @@
+import { useFolderPicker } from '../hooks/useFolderPicker';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, Textarea } from '@open-design/components';
 import type {
@@ -23,7 +24,6 @@ import {
   fetchProjectDesignSystemPackageAudit,
   fetchDesignSystemRevisions,
   importProjectFigma,
-  openFolderDialog,
   startDesignSystemTokenContractRebuildJob,
   syncDesignSystemAssetsFromWorkspace as syncDesignSystemAssetsFromWorkspaceRequest,
   updateDesignSystemRevisionStatus,
@@ -58,6 +58,7 @@ import {
   FILE_SYSTEM_READ_ERROR_MESSAGE,
   isFileSystemReadError,
 } from '../utils/fileSystemErrors';
+import { folderPickerErrorDetails } from '../utils/folderPicker';
 import { randomUUID } from '../utils/uuid';
 import type {
   AgentEvent,
@@ -353,6 +354,7 @@ export function DesignSystemCreationFlow({
   designSystems = [],
 }: CreationProps) {
   const { t } = useI18n();
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
   const { context: workspaceContext } = useWorkspaceContext();
   const [step, setStep] = useState<SetupStep>('setup');
   // A Library "create design system from selection" hand-off pre-fills the
@@ -770,12 +772,17 @@ export function DesignSystemCreationFlow({
 
   async function handlePickCodeFolder() {
     emitCreateFormClick('browse_folder');
-    const selected = await openFolderDialog();
-    if (!selected) return;
-    setState((curr) => ({
-      ...curr,
-      codeFolders: Array.from(new Set([...curr.codeFolders, selected])),
-    }));
+    try {
+      const selected = await pickFolder();
+      if (!selected) return;
+      setState((curr) => ({
+        ...curr,
+        codeFolders: Array.from(new Set([...curr.codeFolders, selected])),
+      }));
+    } catch (err) {
+      const details = folderPickerErrorDetails(err);
+      setVisibleError(`${t('chat.linkedFolderPickError')}${details ? `: ${details}` : ''}`);
+    }
   }
 
   function handleRemoveCodeFolder(folder: string) {
@@ -1045,6 +1052,7 @@ export function DesignSystemCreationFlow({
     <div
       className={`ds-setup-shell${embedded ? ' ds-setup-shell--embedded' : ''}`}
     >
+      {folderPickerDialog}
       {errorToast ? (
         <Toast
           key={errorToast.id}
