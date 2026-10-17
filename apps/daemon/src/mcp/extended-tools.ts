@@ -1,9 +1,10 @@
+import { parseVisualEditRequest, visualStyleProperties } from '../artifacts/visual-edit.js';
 import { createHash } from 'node:crypto';
 import { CLOUDFLARE_PAGES_PROVIDER_ID, VERCEL_PROVIDER_ID } from '../deploy.js';
 import { resolveMcpWorkspaceContext } from '../mcp-workspace-context.js';
 
 type ObjectValue = Record<string, unknown>;
-export type Schema = { type: string; enum?: string[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema };
+export type Schema = { type: string; enum?: string[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; allowEmpty?: boolean };
 const string: Schema = { type: 'string' };
 const boolean: Schema = { type: 'boolean' };
 const choice = (...values: string[]): Schema => ({ type: 'string', enum: values });
@@ -22,6 +23,12 @@ const conversation = { ...project, conversationId: string };
 const file = { ...project, path: string };
 const provider = { ...file, providerId: choice(VERCEL_PROVIDER_ID, CLOUDFLARE_PAGES_PROVIDER_ID) };
 const write = { requestId: string };
+const visualString: Schema = { type: 'string', allowEmpty: true };
+const visualPatch = object({
+  kind: choice('set-text', 'set-link', 'set-image', 'set-style'), id: string,
+  value: visualString, text: visualString, href: string, src: string, alt: visualString,
+  styles: object(Object.fromEntries(visualStyleProperties.map((key) => [key, string]))),
+}, ['kind', 'id']);
 
 function tool(name: string, description: string, properties: Record<string, Schema>, required: string[], mutation = false, destructive = false) {
   return {
@@ -53,6 +60,8 @@ export const EXTENDED_TOOL_DEFS = [
   tool('get_file_version', 'Read one HTML file version.', { ...file, versionId: string }, ['project', 'path', 'versionId']),
   tool('create_file_version', 'Snapshot the current HTML file using the existing version API.', { ...file, ...write, label: string }, ['project', 'path', 'requestId'], true),
   tool('restore_file_version', 'Restore an HTML version. Requires explicit confirm.', { ...file, ...write, versionId: string, confirm: boolean }, ['project', 'path', 'versionId', 'confirm', 'requestId'], true, true),
+  tool('get_visual_edit_targets', 'Read bounded static HTML data-od-id targets and the exact SHA256. No scripts execute; runtime-generated DOM is unsupported.', file, ['project', 'path']),
+  tool('apply_visual_edit_patch', 'Apply one restricted static HTML patch using expectedHash from get_visual_edit_targets. Only text/link/image/limited style edits; requires confirm=true. Returns new hash and recoverable version IDs.', { ...file, ...write, expectedHash: string, patch: visualPatch, confirm: boolean }, ['project', 'path', 'requestId', 'expectedHash', 'patch', 'confirm'], true, true),
   tool('get_preview_url', 'Mint an expiring daemon-authorized preview URL. Treat it as sensitive; use the returned CSP and iframe sandbox.', file, ['project', 'path']),
 ];
 
@@ -79,7 +88,7 @@ function validate(value: unknown, schema: Schema, field: string): void {
   } else if (schema.type === 'integer') {
     if (!Number.isSafeInteger(value)) throw new Error(`INVALID_ARGUMENT: ${field} must be an integer`);
   } else if (schema.type === 'string') {
-    if (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\x00-\x1f]/u.test(value)) throw new Error(`INVALID_ARGUMENT: ${field} must be a nonempty bounded string`);
+    if (typeof value !== 'string' || (!schema.allowEmpty && !value.trim()) || value.length > (schema.allowEmpty ? 4096 : 1024) || (schema.allowEmpty ? /[\x00-\x08\x0b-\x1f]/u : /[\x00-\x1f]/u).test(value)) throw new Error(`INVALID_ARGUMENT: ${field} must be a nonempty bounded string`);
     if (schema.enum && !schema.enum.includes(value)) throw new Error(`INVALID_ARGUMENT: invalid ${field}`);
   } else if (typeof value !== schema.type) {
     throw new Error(`INVALID_ARGUMENT: invalid ${field}`);
@@ -166,7 +175,8 @@ export class McpExtendedTools {
       legacyTools: 'Unchanged tools can mutate the daemon owner workspace. Their trust boundary is a single daemon owner, not per-user vMCP isolation.',
       sharedAuthorization: 'BLOCKED: ToolHive OIDC does not bind the caller to the daemon workspace',
       futureRequirement: 'Bind the verified per-user OIDC principal to daemon workspace authority and enforce vMCP authorization rules before shared enablement. Headers cannot cross the current unauthenticated stdio bridge as verified identity.',
-      unsupported: ['message deletion/rename (no REST API)', 'browser DOM visual editing (no daemon API)'],
+      unsupported: ['message deletion/rename (no REST API)', 'runtime-generated DOM / arbitrary HTML / full multimedia editing'],
+      visualEditing: { supported: this.access.localOwner === true, staticHtmlOnly: true, operations: ['set-text', 'set-link', 'set-image', 'set-style'], styleProperties: visualStyleProperties, requiresHash: true, requiresConfirm: true, restTrustBoundary: 'Direct loopback daemon owner only. Headers are attribution, not OIDC authentication; the existing daemon authority verifier and persisted creator binding must agree. Shared/proxied REST callers are denied.' },
       idempotency: 'Mutation requestIds live only for this MCP process. After restart or ambiguous failure, inspect state before retrying.',
       history: 'Bridge-side slicing only: full REST history is capped at 8 MiB; page output at 512 KiB. No database pagination API is available.',
       modelUpdates: 'Require an available agent, live catalog, enabled model and matching reasoning/serviceTier options. Catalog availability is not inference/entitlement verification; REST has no conditional update.',
@@ -176,7 +186,8 @@ export class McpExtendedTools {
     if (!['http:', 'https:'].includes(daemon.protocol) || !['127.0.0.1', '[::1]', 'localhost'].includes(daemon.hostname) || daemon.username || daemon.password || daemon.search || daemon.hash || !['', '/'].includes(daemon.pathname)) throw new Error('MCP_LOCAL_OWNER_ONLY: a loopback daemon origin is required');
     const mutation = definition.annotations.readOnlyHint === false;
     if (mutation && !this.access.allowWrites) throw new Error('MCP_WRITE_AUTHORITY_REQUIRED: writes require the local operator startup option');
-    if (['delete_conversation', 'restore_file_version', 'publish_project'].includes(name) && args.confirm !== true) throw new Error('CONFIRMATION_REQUIRED: explicit confirm=true is required');
+    if (['delete_conversation', 'restore_file_version', 'publish_project', 'apply_visual_edit_patch'].includes(name) && args.confirm !== true) throw new Error('CONFIRMATION_REQUIRED: explicit confirm=true is required');
+    if (name === 'apply_visual_edit_patch') parseVisualEditRequest({ expectedHash: args.expectedHash, patch: args.patch, confirm: args.confirm });
     const workspace = await resolveMcpWorkspaceContext(baseUrl, { force: true });
     if (!workspace) throw new Error('WORKSPACE_CONTEXT_REQUIRED: no active daemon workspace; no headerless fallback is allowed');
     const execute = async () => {
@@ -321,6 +332,8 @@ export class McpExtendedTools {
       case 'get_file_version': return request(`${versions}/${segment(args.versionId)}`);
       case 'create_file_version': return request(versions, 'POST', { source: 'manual', ...(args.label === undefined ? {} : { label: args.label }) });
       case 'restore_file_version': return request(`${versions}/${segment(args.versionId)}/restore`, 'POST', {});
+      case 'get_visual_edit_targets': return request(`${root}/files/${encodedFile}/visual-patch`);
+      case 'apply_visual_edit_patch': return request(`${root}/files/${encodedFile}/visual-patch`, 'POST', { expectedHash: args.expectedHash, patch: args.patch, confirm: args.confirm });
       case 'get_preview_url': return request(`${root}/preview-url?file=${encodeURIComponent(String(args.path))}`);
       default: throw new Error('UNKNOWN_TOOL');
     }

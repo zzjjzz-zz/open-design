@@ -1,3 +1,4 @@
+import { registerVisualEditRoutes } from './visual-edit.js';
 import { injectMotionSourcePlayer, isMotionVideoComposition, MOTION_PREVIEW_OUTPUT_HEADER } from '@open-design/contracts/runtime/motion-source-player';
 import { createHash, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -7536,6 +7537,42 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         String(err?.message || err),
       );
     }
+  });
+
+  registerVisualEditRoutes(app, {
+    projectsRoot: PROJECTS_DIR,
+    getProject: (id) => getProject(db, id),
+    authorizeRead: (req, res, id) => authorizeProjectRequest(req, res, id, { mode: 'read' }),
+    authorizeWrite: async (req, res, id) => {
+      // The legacy project gate deliberately trusts local attribution headers.
+      // This new write surface additionally requires the existing authority
+      // verifier (fresh directory authority in Vela mode), never just headers.
+      if (!ctx.verifyWorkspaceRequestAuthority) {
+        sendApiError(res, 503, 'WORKSPACE_AUTHORITY_UNAVAILABLE', 'workspace authority unavailable');
+        return false;
+      }
+      const verified = await ctx.verifyWorkspaceRequestAuthority(req);
+      if (!verified.ok) {
+        sendApiError(res, verified.status, verified.code, 'workspace writer authority denied');
+        return false;
+      }
+      const binding = getWorkspaceProjectByProjectId(db, id);
+      const identity = verified.context;
+      if (!binding || !binding.createdByWorkspaceMemberId
+        || binding.workspaceId !== identity.workspaceId
+        || binding.createdByWorkspaceMemberId !== identity.workspaceMemberId
+        || identity.workspaceId !== req.header('x-od-workspace-id')?.trim()
+        || identity.workspaceMemberId !== req.header('x-od-workspace-member-id')?.trim()
+        || identity.memberStatus !== 'active'
+        || identity.lifecycleState === 'locked' || identity.lifecycleState === 'deleted') {
+        sendApiError(res, 403, 'WORKSPACE_PROJECT_PERMISSION_DENIED', 'workspace writer authority denied');
+        return false;
+      }
+      return enforceWorkspaceProjectMutation(
+        req, res, sendApiError, getWorkspaceProject, getWorkspaceProjectByProjectId, db, id, 'writeFiles',
+      );
+    },
+    sendApiError,
   });
 
   app.get(/^\/api\/projects\/([^/]+)\/files\/(.+)$/u, async (req, res) => {

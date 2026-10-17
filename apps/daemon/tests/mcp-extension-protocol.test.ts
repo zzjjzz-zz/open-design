@@ -38,7 +38,7 @@ it('MCP initialize/list, shared fail-closed, real HTTP workspace denial, history
   upsertMessage(db, cid, { id: messageId, role: 'user', content: 'Fixture history only', createdAt: now });
   const projectDir = path.join(dataDir, 'projects', project);
   await mkdir(projectDir, { recursive: true });
-  await writeFile(path.join(projectDir, 'index.html'), '<!doctype html><html><body>version one</body></html>');
+  await writeFile(path.join(projectDir, 'index.html'), '<!doctype html><html><body><h1 data-od-id="title">version one</h1></body></html>');
   await writeAppConfig(dataDir, { agentId: 'codex', agentModels: { codex: { model: 'fixture-model' } }, agentCliEnv: { codex: { OPENAI_API_KEY: 'fixture-secret', OPENAI_BASE_URL: 'https://fixture.invalid' } }, agentCliEnvIntent: { codex: { apiKeyOverride: true } } });
   const requests: Array<{ route: string; method: string; status: number }> = [];
   let publishCount = 0;
@@ -147,6 +147,21 @@ it('MCP initialize/list, shared fail-closed, real HTTP workspace denial, history
     const model = payload(await call('update_model_preferences', { agent: 'codex', preferences: { reasoning: 'high' }, requestId: 'model' }));
     expect(model.agentModels.codex).toMatchObject({ model: 'fixture-model', reasoning: 'high' });
     expect((await readAppConfig(dataDir)).agentCliEnv?.codex?.OPENAI_API_KEY).toBe('fixture-secret');
+
+    expect((await local.listTools()).tools.map((tool) => tool.name)).toContain('get_visual_edit_targets');
+    expect((await local.listTools()).tools.map((tool) => tool.name)).toContain('apply_visual_edit_patch');
+    const visual = payload(await call('get_visual_edit_targets', { project, path: 'index.html' }));
+    expect(visual.targets).toMatchObject([{ id: 'title', operations: ['set-style', 'set-text'] }]);
+    expect((await call('get_visual_edit_targets', { project: foreign, path: 'index.html' })).isError).toBe(true);
+    const edit = { project, path: 'index.html', expectedHash: visual.hash, patch: { kind: 'set-text', id: 'title', value: 'visual edit' }, confirm: true, requestId: 'visual-edit-once' };
+    const edited = await call('apply_visual_edit_patch', edit);
+    const editedPayload = payload(edited);
+    expect(editedPayload.previousHash).toBe(visual.hash);
+    expect(await call('apply_visual_edit_patch', edit)).toEqual(edited);
+    expect((await call('apply_visual_edit_patch', { ...edit, requestId: 'stale-visual' })).isError).toBe(true);
+    expect(await readFile(path.join(projectDir, 'index.html'), 'utf8')).toContain('visual edit');
+    payload(await call('restore_file_version', { project, path: 'index.html', versionId: editedPayload.previousVersionId, confirm: true, requestId: 'visual-undo' }));
+    expect(await readFile(path.join(projectDir, 'index.html'), 'utf8')).toContain('version one');
 
     const snapshot = payload(await call('create_file_version', { project, path: 'index.html', label: 'Known good', requestId: 'version' }));
     expect(snapshot.version.id).toBeTruthy();

@@ -33,7 +33,7 @@ describe('MCP sensitive extension policy', () => {
     const args: Record<string, unknown> = {};
     for (const field of schema.required ?? []) {
       const prop = schema.properties![field]!;
-      args[field] = prop.type === 'object' ? {} : prop.type === 'boolean' ? true : prop.enum?.[0] ?? 'value';
+      args[field] = prop.type === 'object' ? Object.fromEntries((prop.required ?? []).map((key) => [key, prop.properties?.[key]?.enum?.[0] ?? 'value'])) : prop.type === 'boolean' ? true : prop.enum?.[0] ?? 'value';
     }
     const result = await handleMcpToolCall(base, name, args);
     expect(result.isError).toBe(true);
@@ -243,5 +243,38 @@ describe('MCP export, design and mutation contracts', () => {
     const invoke = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'cannot reach the OpenDesign daemon' }], isError: true }));
     await target.call('publish_project', {}, invoke);
     expect(invoke).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('MCP bounded visual editing', () => {
+  const patchArgs = { project, path: 'index.html', requestId: 'visual-1', expectedHash: 'a'.repeat(64), confirm: true, patch: { kind: 'set-text', id: 'title', value: '' } };
+  it('exposes owner-only read/write tools and accurate capabilities', async () => {
+    expect(localMcpToolDefinitions({ localOwner: true }).map((t) => t.name)).toContain('get_visual_edit_targets');
+    expect(localMcpToolDefinitions({ localOwner: true }).map((t) => t.name)).not.toContain('apply_visual_edit_patch');
+    expect(body(await call('get_mcp_capabilities')).visualEditing).toMatchObject({ supported: true, staticHtmlOnly: true, requiresHash: true });
+  });
+  it('requires write opt-in and explicit confirmation before HTTP access', async () => {
+    const mock = vi.fn(); vi.stubGlobal('fetch', mock);
+    expect((await call('apply_visual_edit_patch', patchArgs, new McpExtendedTools({ localOwner: true }))).content[0]!.text).toContain('MCP_WRITE_AUTHORITY_REQUIRED');
+    expect((await call('apply_visual_edit_patch', { ...patchArgs, confirm: false })).content[0]!.text).toContain('CONFIRMATION_REQUIRED');
+    expect(mock).not.toHaveBeenCalled();
+  });
+  it('sends strict patch with workspace headers and deduplicates a write', async () => {
+    const mock = mockDaemon(() => json({ hash: 'b'.repeat(64), versionId: 'v1' }));
+    const session = owner();
+    const first = await call('apply_visual_edit_patch', patchArgs, session);
+    expect(first.isError).not.toBe(true);
+    expect(await call('apply_visual_edit_patch', patchArgs, session)).toEqual(first);
+    const writes = mock.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]![0]).toContain(`/api/projects/${project}/files/index.html/visual-patch`);
+    expect(JSON.parse(String(writes[0]![1]?.body))).toEqual({ patch: patchArgs.patch, expectedHash: patchArgs.expectedHash, confirm: true });
+    expect(writes[0]![1]?.headers).toMatchObject({ 'x-od-workspace-id': 'ws-a' });
+  });
+  it.each([{ kind: 'set-text', id: 'title', value: 'x', onclick: 'evil' }, { kind: 'set-link', id: 'title', text: 'x', href: 'javascript:evil()' }, { kind: 'set-style', id: 'title', styles: { color: 'red; background:url(x)' } }])('rejects injection before daemon access %j', async (patch) => {
+    const mock = vi.fn(); vi.stubGlobal('fetch', mock);
+    expect((await call('apply_visual_edit_patch', { ...patchArgs, patch })).isError).toBe(true);
+    expect(mock).not.toHaveBeenCalled();
   });
 });

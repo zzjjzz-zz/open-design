@@ -144,6 +144,9 @@ importers:
       hyperframes:
         specifier: 0.8.1
         version: 0.8.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.2))(@types/node@20.19.39)(yauzl@2.10.0)
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1
       jszip:
         specifier: 3.10.1
         version: 3.10.1
@@ -193,9 +196,6 @@ importers:
       '@types/node':
         specifier: 20.19.39
         version: 20.19.39
-      jsdom:
-        specifier: 29.1.1
-        version: 29.1.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3
