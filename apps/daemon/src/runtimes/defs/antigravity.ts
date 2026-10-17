@@ -12,6 +12,8 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { DEFAULT_MODEL_OPTION } from './shared.js';
+import { getRememberedLiveModels } from '../models.js';
+import type { RuntimeModelOption } from '../types.js';
 import { agentCapabilities } from '../capabilities.js';
 import type { RuntimeAgentDef } from '../types.js';
 
@@ -39,33 +41,29 @@ export function encodeAntigravityStdinPrompt(prompt: string): string {
   return `${JSON.stringify({ event: 'user', message: { content: prompt } })}\n`;
 }
 
-// `agy` v1.0.3 still has no `--model` flag (upstream issue #35), but the
-// TUI's Switch-Model picker writes the choice to its settings.json, and
-// every headless `agy` invocation re-reads that file on startup — verified by
-// capturing the `--log-file` line `Propagating selected model override to
-// backend: label="<model>"`. So we can route OD's model picker through
-// settings.json: when the user picks a concrete model in Settings, the
-// daemon writes the label into agy's settings.json right before spawn,
-// and the resulting headless run uses that model.
-//
-// Two ids the picker exposes are special:
-//   - 'default'         : leave settings.json untouched, so agy keeps
-//                         whatever the user last picked in its own TUI.
-//                         (Respects user choice when they switch models
-//                         from `agy` directly.)
-//   - any other id      : the literal display label agy expects (e.g.
-//                         "Gemini 3.1 Pro (High)", "Claude Sonnet 4.6
-//                         (Thinking)"). We persist it before spawn.
-//
-// `supportsCustomModel: false` because the label set is a server-side
-// enum — a typed id agy doesn't recognise resolves to a silent
-// `availableModels` cache miss + empty headless output, which surfaces
-// to the user as a generic "empty response" error.
-//
-// The 8 model labels mirror what `Switch Model` in agy's TUI lists for
-// consumer-tier accounts as of 2026-05-28. The set is small and stable
-// enough to ship statically until upstream adds a programmatic
-// `agy models` subcommand (also tracked under issue #35).
+// agy 1.2.x exposes account-scoped models as tab-separated ID and display
+// label pairs. Pass the opaque ID unchanged to `--model`; never pass a stale
+// human-readable label as an ID. Older CLIs may lack this command or flag.
+// Those versions can still use the CLI-configured default model.
+export function parseAntigravityModels(stdout: string): RuntimeModelOption[] | null {
+  const models: RuntimeModelOption[] = [DEFAULT_MODEL_OPTION];
+  const seen = new Set<string>(['default']);
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = /^([a-z][a-z0-9._-]{1,127})\t([^\t\r\n]{1,160})$/.exec(line.trim());
+    if (!match) continue;
+    const id = match[1]!;
+    const label = match[2]!.trim();
+    if (!label || seen.has(id)) continue;
+    seen.add(id);
+    models.push({ id, label });
+    if (models.length >= 201) break;
+  }
+  return models.length > 1 ? models : null;
+}
+
+// Old agy versions use a process-global settings.json to select a model; newer
+// builds accept `--model` per process without mutating that file. Preserve the
+// older fallback and its lock for installations that do not have `--model`.
 const ANTIGRAVITY_SETTINGS_PATH = join(
   homedir(),
   '.gemini',
@@ -216,20 +214,17 @@ export const antigravityAgentDef = {
     '--add-dir': 'addDir',
     '--model': 'modelFlag',
   },
-  fallbackModels: [
-    DEFAULT_MODEL_OPTION,
-    { id: 'Gemini 3.1 Pro (High)', label: 'Gemini 3.1 Pro (High)' },
-    { id: 'Gemini 3.1 Pro (Low)', label: 'Gemini 3.1 Pro (Low)' },
-    { id: 'Gemini 3.5 Flash (High)', label: 'Gemini 3.5 Flash (High)' },
-    { id: 'Gemini 3.5 Flash (Medium)', label: 'Gemini 3.5 Flash (Medium)' },
-    { id: 'Gemini 3.5 Flash (Low)', label: 'Gemini 3.5 Flash (Low)' },
-    {
-      id: 'Claude Sonnet 4.6 (Thinking)',
-      label: 'Claude Sonnet 4.6 (Thinking)',
-    },
-    { id: 'Claude Opus 4.6 (Thinking)', label: 'Claude Opus 4.6 (Thinking)' },
-    { id: 'GPT-OSS 120B (Medium)', label: 'GPT-OSS 120B (Medium)' },
-  ],
+  // Always query the installed CLI; static dated names quickly become invalid.
+  // Default-only is the safe fallback if the account catalog is unavailable.
+  listModels: {
+    args: ['models'],
+    // Account-scoped catalogs can be slow when agy refreshes its backend.
+    timeoutMs: 30_000,
+    parse: parseAntigravityModels,
+  },
+  fallbackModels: [DEFAULT_MODEL_OPTION],
+  // Only account-advertised IDs should be selectable; arbitrary strings cannot
+  // be assumed to resolve even when the binary supports `--model`.
   supportsCustomModel: false,
   // We deliberately do NOT opt into `resumesSessionViaCli` / agy's `-c`
   // resume flag on follow-up turns. Tested both shapes; `-c` activates
@@ -253,10 +248,24 @@ export const antigravityAgentDef = {
     runtimeContext = {},
   ) => {
     const caps = agentCapabilities.get('antigravity') ?? {};
-    const selectedModel =
+    const configuredModel =
       options.model && options.model !== DEFAULT_MODEL_OPTION.id
         ? options.model
         : null;
+    const accountModels = getRememberedLiveModels('antigravity')
+      .filter((model) => model.id !== DEFAULT_MODEL_OPTION.id);
+    // Existing configurations used human-readable labels; a label that still
+    // exists is resolved to its current opaque ID without changing config.
+    const accountModel = configuredModel
+      ? accountModels.find((model) =>
+          model.id === configuredModel || model.label === configuredModel)
+      : null;
+    if (configuredModel && accountModels.length > 0 && !accountModel) {
+      throw new Error(
+        `Antigravity model "${configuredModel}" is not in the current agy catalog. Select a current model in OpenDesign settings.`,
+      );
+    }
+    const selectedModel = accountModel?.id ?? configuredModel;
 
     // Preserve explicit directory permissions from the local deployment while
     // adopting upstream's stream-json stdin protocol for long prompts.
@@ -271,8 +280,15 @@ export const antigravityAgentDef = {
       );
     }
     if (selectedModel && !caps.modelFlag) {
+      const liveModel = getRememberedLiveModels('antigravity')
+        .find((model) => model.id === selectedModel);
+      // New catalogs expose opaque IDs, while old agy builds need the label
+      // written to settings.json. Do not mistake an unresolved ID for a label.
+      if (!liveModel && !selectedModel.includes(' ')) {
+        throw new Error('Antigravity cannot select this model without --model support. Upgrade agy or choose Default.');
+      }
       writeAntigravityModelSelection(
-        selectedModel,
+        liveModel?.label ?? selectedModel,
         runtimeContext.antigravitySettingsPath,
       );
     }
