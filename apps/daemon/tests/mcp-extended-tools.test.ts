@@ -12,7 +12,16 @@ const owner = () => new McpExtendedTools({ localOwner: true, allowWrites: true }
 const call = (name: string, args: Record<string, unknown> = {}, extendedTools = owner()) => handleMcpToolCall(base, name, args, { extendedTools });
 
 function mockDaemon(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
-  const mock = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => String(input).endsWith('/api/workspace/directory') ? json(directory) : handler(String(input), init));
+  const mock = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = String(input);
+    if (url.endsWith('/api/workspace/directory')) return json(directory);
+    if (url.endsWith('/api/agents?stream=1')) {
+      const result = await handler(url.replace('?stream=1', ''), init);
+      const catalog = await result.json() as { agents?: unknown[] };
+      return new Response((catalog.agents ?? []).map((agent) => `event: agent\ndata: ${JSON.stringify(agent)}\n\n`).join('') + 'event: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    }
+    return handler(url, init);
+  });
   vi.stubGlobal('fetch', mock);
   return mock;
 }

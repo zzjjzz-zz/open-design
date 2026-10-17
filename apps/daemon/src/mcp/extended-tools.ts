@@ -2,6 +2,7 @@ import { parseVisualEditRequest, visualStyleProperties } from '../artifacts/visu
 import { createHash } from 'node:crypto';
 import { CLOUDFLARE_PAGES_PROVIDER_ID, VERCEL_PROVIDER_ID } from '../deploy.js';
 import { resolveMcpWorkspaceContext } from '../mcp-workspace-context.js';
+import { readLiveAgentModels } from './agent-models.js';
 
 type ObjectValue = Record<string, unknown>;
 export type Schema = { type: string; enum?: string[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; allowEmpty?: boolean };
@@ -305,7 +306,7 @@ export class McpExtendedTools {
         if (!/^[a-z][a-z0-9-]{0,63}$/u.test(String(args.agent)) || Object.keys(args.preferences as ObjectValue).length === 0) throw new Error('INVALID_ARGUMENT: invalid agent/preferences');
         const models = modelPreferences((await config()).agentModels);
         const preferences = { ...(models[String(args.agent)] as ObjectValue ?? {}), ...args.preferences as ObjectValue };
-        const catalog = await request('/api/agents');
+        const catalog = { agents: [await readLiveAgentModels(baseUrl, headers, String(args.agent))] };
         const agents = record(catalog) && Array.isArray(catalog.agents)
           ? catalog.agents.filter((agent) => record(agent) && agent.id === args.agent) : [];
         const agent = agents.length === 1 ? agents[0] : null;

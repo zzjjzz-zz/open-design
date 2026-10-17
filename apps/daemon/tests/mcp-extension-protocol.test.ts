@@ -51,6 +51,11 @@ it('MCP initialize/list, shared fail-closed, real HTTP workspace denial, history
         res.end(JSON.stringify({ items: [{ workspaceId: 'ws-fixture-owner', workspaceMemberId: 'fixture-owner', workspaceType: 'personal', memberStatus: 'active', lifecycleState: 'active' }] }));
         return;
       }
+      if (route === '/api/agents?stream=1') {
+        res.setHeader('content-type', 'text/event-stream');
+        res.end(`event: agent\ndata: ${JSON.stringify({ id: 'codex', available: true, modelsSource: 'live', models: [{ id: 'fixture-model', enabled: true, reasoningOptions: [{ id: 'high' }] }] })}\n\nevent: done\ndata: {}\n\n`);
+        return;
+      }
       if (route === '/api/agents') {
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ agents: [{ id: 'codex', available: true, modelsSource: 'live', models: [{ id: 'fixture-model', enabled: true, reasoningOptions: [{ id: 'high' }] }] }] }));
